@@ -1,6 +1,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { MessageSquare, Video, PhoneCall } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface SkillCardProps {
   skill: {
@@ -13,22 +20,81 @@ interface SkillCardProps {
 }
 
 export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
+  const getLevelColor = (level: string) => {
+    switch (level.toLowerCase()) {
+      case 'beginner':
+        return 'bg-green-100 text-green-800';
+      case 'intermediate':
+        return 'bg-blue-100 text-blue-800';
+      case 'advanced':
+        return 'bg-purple-100 text-purple-800';
+      case 'expert':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <Card className="w-full max-w-md hover:shadow-lg transition-shadow duration-300">
       <CardHeader>
         <div className="flex justify-between items-start">
           <div>
             <CardTitle className="text-xl font-bold">{skill.title}</CardTitle>
-            <CardDescription className="mt-1">{skill.category}</CardDescription>
+            <CardDescription className="mt-1 capitalize">{skill.category}</CardDescription>
           </div>
-          <Badge variant="secondary">{skill.level}</Badge>
+          <Badge className={`${getLevelColor(skill.level)} capitalize`}>
+            {skill.level}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent>
         <p className="text-gray-600 mb-4">{skill.description}</p>
-        <Button onClick={onConnect} className="w-full bg-primary hover:bg-primary/90">
-          Connect & Learn
-        </Button>
+        <div className="space-y-3">
+          <Button onClick={onConnect} className="w-full bg-primary hover:bg-primary/90">
+            Connect & Learn
+          </Button>
+          <div className="flex justify-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Chat</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <Video className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Video Call</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <PhoneCall className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Audio Call</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
