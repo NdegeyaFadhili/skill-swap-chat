@@ -4,12 +4,15 @@ import { SkillForm } from "@/components/SkillForm";
 import { Button } from "@/components/ui/button";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
+import { AuthForm } from "@/components/AuthForm";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
+  const { user, signOut } = useAuth();
   
   // Enhanced mock data
   const mockSkills = [
@@ -52,6 +55,13 @@ const Index = () => {
   ];
 
   const handleConnect = (skill: any) => {
+    if (!user) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to connect with other users.",
+      });
+      return;
+    }
     toast({
       title: "Connection Request Sent!",
       description: `You'll be notified when the instructor accepts your request to learn ${skill.title}.`,
@@ -63,6 +73,14 @@ const Index = () => {
     skill.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
     skill.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <AuthForm />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -87,6 +105,12 @@ const Index = () => {
               >
                 <PlusIcon className="w-4 h-4" />
                 Add Skill
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => signOut()}
+              >
+                Sign Out
               </Button>
             </div>
           </div>
