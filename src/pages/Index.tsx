@@ -145,6 +145,10 @@ const Index = () => {
           : "You have rejected the connection request",
       });
 
+      if (accept) {
+        navigate(`/meeting/${connectionId}`);
+      }
+
       // Refresh the connection requests
       fetchConnectionRequests();
     } catch (error: any) {
