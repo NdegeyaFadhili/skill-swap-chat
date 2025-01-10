@@ -8,13 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AuthForm } from "@/components/AuthForm";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
+import { useNavigate } from "react-router-dom";
 
 interface Skill {
   id: string;
@@ -32,9 +26,9 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
   const { toast } = useToast();
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
@@ -109,17 +103,7 @@ const Index = () => {
     skill.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredSkills.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedSkills = filteredSkills.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-
-  const handlePreviousPage = () => {
-    setCurrentPage((prev) => Math.max(1, prev - 1));
-  };
-
-  const handleNextPage = () => {
-    setCurrentPage((prev) => Math.min(totalPages, prev + 1));
-  };
+  const paginatedSkills = filteredSkills.slice(0, ITEMS_PER_PAGE);
 
   if (!user) {
     return (
@@ -134,7 +118,12 @@ const Index = () => {
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">Skill Exchange</h1>
+            <h1 
+              onClick={() => navigate('/')} 
+              className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-gray-700 transition-colors"
+            >
+              Skill Exchange
+            </h1>
             <div className="flex items-center gap-4 w-full sm:w-auto">
               <div className="relative flex-1 sm:flex-initial">
                 <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -188,28 +177,9 @@ const Index = () => {
               ))}
             </div>
 
-            {filteredSkills.length === 0 ? (
+            {filteredSkills.length === 0 && (
               <div className="text-center py-10">
                 <p className="text-gray-500">No skills found matching your search.</p>
-              </div>
-            ) : (
-              <div className="mt-8">
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious 
-                        onClick={handlePreviousPage}
-                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                      />
-                    </PaginationItem>
-                    <PaginationItem>
-                      <PaginationNext 
-                        onClick={handleNextPage}
-                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
               </div>
             )}
           </>
