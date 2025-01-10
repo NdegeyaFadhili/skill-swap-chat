@@ -19,20 +19,30 @@ interface Skill {
   instructor_id: string;
 }
 
+interface ConnectionRequest {
+  id: string;
+  skill_id: string;
+  learner_id: string;
+  status: string;
+  skill: Skill;
+}
+
 const ITEMS_PER_PAGE = 6;
 
 const Index = () => {
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
       fetchSkills();
+      fetchConnectionRequests();
     }
   }, [user]);
 
@@ -53,6 +63,28 @@ const Index = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConnectionRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('skill_connections')
+        .select(`
+          *,
+          skill:skills(*)
+        `)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      setConnectionRequests(data || []);
+    } catch (error: any) {
+      console.error('Error fetching connection requests:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load connection requests",
+        variant: "destructive",
+      });
     }
   };
 
@@ -88,6 +120,33 @@ const Index = () => {
         title: "Request Sent!",
         description: "Your connection request has been sent to the instructor.",
       });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleConnectionResponse = async (connectionId: string, accept: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('skill_connections')
+        .update({ status: accept ? 'accepted' : 'rejected' })
+        .eq('id', connectionId);
+
+      if (error) throw error;
+
+      toast({
+        title: accept ? "Request Accepted" : "Request Rejected",
+        description: accept 
+          ? "You have accepted the connection request" 
+          : "You have rejected the connection request",
+      });
+
+      // Refresh the connection requests
+      fetchConnectionRequests();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -144,7 +203,7 @@ const Index = () => {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => signOut()}
+                onClick={() => supabase.auth.signOut()}
               >
                 Sign Out
               </Button>
@@ -154,6 +213,37 @@ const Index = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Connection Requests Section */}
+        {connectionRequests.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Connection Requests</h2>
+            <div className="space-y-4">
+              {connectionRequests.map((request) => (
+                <div key={request.id} className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Request for: {request.skill.title}</p>
+                    <p className="text-sm text-gray-500">Level: {request.skill.level}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      onClick={() => handleConnectionResponse(request.id, true)}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleConnectionResponse(request.id, false)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {showForm && (
           <div className="mb-8 bg-white p-6 rounded-lg shadow-sm">
             <h2 className="text-xl font-semibold mb-4">Add Your Skill</h2>
