@@ -8,6 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import { AuthForm } from "@/components/AuthForm";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface Skill {
   id: string;
@@ -18,11 +25,14 @@ interface Skill {
   instructor_id: string;
 }
 
+const ITEMS_PER_PAGE = 6;
+
 const Index = () => {
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const { toast } = useToast();
   const { user, signOut } = useAuth();
 
@@ -99,6 +109,18 @@ const Index = () => {
     skill.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filteredSkills.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedSkills = filteredSkills.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  const handlePreviousPage = () => {
+    setCurrentPage((prev) => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -157,7 +179,7 @@ const Index = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredSkills.map((skill) => (
+              {paginatedSkills.map((skill) => (
                 <SkillCard
                   key={skill.id}
                   skill={skill}
@@ -166,9 +188,28 @@ const Index = () => {
               ))}
             </div>
 
-            {filteredSkills.length === 0 && (
+            {filteredSkills.length === 0 ? (
               <div className="text-center py-10">
                 <p className="text-gray-500">No skills found matching your search.</p>
+              </div>
+            ) : (
+              <div className="mt-8">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={handlePreviousPage}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext 
+                        onClick={handleNextPage}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
               </div>
             )}
           </>
