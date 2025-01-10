@@ -52,10 +52,18 @@ export const SkillForm = () => {
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('skills').insert({
-        ...values,
+      // Create the skill with all required fields
+      const skillData = {
+        title: values.title,
+        description: values.description,
+        category: values.category,
+        level: values.level,
         instructor_id: user.id,
-      });
+      };
+
+      const { error } = await supabase
+        .from('skills')
+        .insert(skillData);
 
       if (error) throw error;
 
