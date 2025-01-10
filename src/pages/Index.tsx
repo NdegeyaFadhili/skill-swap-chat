@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SkillCard } from "@/components/SkillCard";
 import { SkillForm } from "@/components/SkillForm";
 import { Button } from "@/components/ui/button";
@@ -7,68 +7,93 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { AuthForm } from "@/components/AuthForm";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+
+interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  level: string;
+  instructor_id: string;
+}
 
 const Index = () => {
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { user, signOut } = useAuth();
-  
-  // Enhanced mock data
-  const mockSkills = [
-    {
-      title: "React Development",
-      description: "Learn modern React with hooks, state management, and best practices. Includes practical projects and real-world applications.",
-      category: "Programming",
-      level: "Intermediate",
-    },
-    {
-      title: "UI/UX Design",
-      description: "Master the principles of user interface design, wireframing, prototyping, and user research methodologies.",
-      category: "Design",
-      level: "Advanced",
-    },
-    {
-      title: "Spanish Language",
-      description: "Learn conversational Spanish from a native speaker. Focus on practical vocabulary and real-world situations.",
-      category: "Language",
-      level: "Beginner",
-    },
-    {
-      title: "Digital Marketing",
-      description: "Comprehensive guide to digital marketing including SEO, social media marketing, and content strategy.",
-      category: "Marketing",
-      level: "Expert",
-    },
-    {
-      title: "Piano Lessons",
-      description: "From basics to advanced techniques, learn piano through structured lessons and practical exercises.",
-      category: "Music",
-      level: "Intermediate",
-    },
-    {
-      title: "Data Science",
-      description: "Learn Python, data analysis, machine learning, and statistical modeling for data science applications.",
-      category: "Programming",
-      level: "Advanced",
-    },
-  ];
 
-  const handleConnect = (skill: any) => {
+  useEffect(() => {
+    if (user) {
+      fetchSkills();
+    }
+  }, [user]);
+
+  const fetchSkills = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('skills')
+        .select('*');
+      
+      if (error) throw error;
+      setSkills(data || []);
+    } catch (error: any) {
+      console.error('Error fetching skills:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load skills",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConnect = async (skill: Skill) => {
     if (!user) {
       toast({
         title: "Please sign in",
-        description: "You need to be signed in to connect with other users.",
+        description: "You need to be signed in to connect with instructors.",
       });
       return;
     }
-    toast({
-      title: "Connection Request Sent!",
-      description: `You'll be notified when the instructor accepts your request to learn ${skill.title}.`,
-    });
+
+    if (skill.instructor_id === user.id) {
+      toast({
+        title: "Cannot connect",
+        description: "You cannot connect to your own skill listing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('skill_connections')
+        .insert({
+          skill_id: skill.id,
+          learner_id: user.id,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Request Sent!",
+        description: "Your connection request has been sent to the instructor.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const filteredSkills = mockSkills.filter(skill =>
+  const filteredSkills = skills.filter(skill =>
     skill.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     skill.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
     skill.category.toLowerCase().includes(searchQuery.toLowerCase())
@@ -125,20 +150,28 @@ const Index = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredSkills.map((skill, index) => (
-            <SkillCard
-              key={index}
-              skill={skill}
-              onConnect={() => handleConnect(skill)}
-            />
-          ))}
-        </div>
-
-        {filteredSkills.length === 0 && (
+        {loading ? (
           <div className="text-center py-10">
-            <p className="text-gray-500">No skills found matching your search.</p>
+            <p className="text-gray-500">Loading skills...</p>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredSkills.map((skill) => (
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  onConnect={() => handleConnect(skill)}
+                />
+              ))}
+            </div>
+
+            {filteredSkills.length === 0 && (
+              <div className="text-center py-10">
+                <p className="text-gray-500">No skills found matching your search.</p>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

@@ -8,18 +8,23 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SkillCardProps {
   skill: {
+    id: string;
     title: string;
     description: string;
     category: string;
     level: string;
+    instructor_id: string;
   };
   onConnect: () => void;
 }
 
 export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
+  const { user } = useAuth();
+  
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
       case 'beginner':
@@ -34,6 +39,8 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+  const isOwnSkill = user?.id === skill.instructor_id;
 
   return (
     <Card className="w-full max-w-md hover:shadow-lg transition-shadow duration-300">
@@ -51,8 +58,12 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
       <CardContent>
         <p className="text-gray-600 mb-4">{skill.description}</p>
         <div className="space-y-3">
-          <Button onClick={onConnect} className="w-full bg-primary hover:bg-primary/90">
-            Connect & Learn
+          <Button 
+            onClick={onConnect} 
+            className="w-full bg-primary hover:bg-primary/90"
+            disabled={isOwnSkill}
+          >
+            {isOwnSkill ? "Your Skill" : "Connect & Learn"}
           </Button>
           <div className="flex justify-center gap-2">
             <TooltipProvider>
