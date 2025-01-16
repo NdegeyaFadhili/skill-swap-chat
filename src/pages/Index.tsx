@@ -50,14 +50,26 @@ const Index = () => {
         .on(
           'postgres_changes',
           {
-            event: 'UPDATE',
+            event: '*',
             schema: 'public',
             table: 'skill_connections',
-            filter: `learner_id=eq.${user.id}`,
           },
           (payload) => {
-            if (payload.new.status === 'accepted') {
-              navigate(`/meeting/${payload.new.id}`);
+            if (payload.eventType === 'UPDATE') {
+              const updatedConnection = payload.new as any;
+              if (updatedConnection.status === 'accepted') {
+                navigate(`/meeting/${updatedConnection.id}`);
+              } else if (updatedConnection.status === 'rejected') {
+                // Refresh connection requests to remove rejected ones
+                fetchConnectionRequests();
+                toast({
+                  title: "Request Rejected",
+                  description: "The connection request has been rejected.",
+                });
+              }
+            } else if (payload.eventType === 'DELETE') {
+              // Refresh connection requests when a request is deleted
+              fetchConnectionRequests();
             }
           }
         )
@@ -90,8 +102,11 @@ const Index = () => {
   };
 
   const fetchConnectionRequests = async () => {
+    if (!user) return;
+    
     try {
-      const { data, error } = await supabase
+      // For instructors: fetch requests for their skills
+      const { data: instructorRequests, error: instructorError } = await supabase
         .from('skill_connections')
         .select(`
           *,
@@ -99,8 +114,8 @@ const Index = () => {
         `)
         .eq('status', 'pending');
 
-      if (error) throw error;
-      setConnectionRequests(data || []);
+      if (instructorError) throw instructorError;
+      setConnectionRequests(instructorRequests || []);
     } catch (error: any) {
       console.error('Error fetching connection requests:', error);
       toast({
@@ -154,25 +169,33 @@ const Index = () => {
 
   const handleConnectionResponse = async (connectionId: string, accept: boolean) => {
     try {
-      const { error } = await supabase
-        .from('skill_connections')
-        .update({ status: accept ? 'accepted' : 'rejected' })
-        .eq('id', connectionId);
-
-      if (error) throw error;
-
-      toast({
-        title: accept ? "Request Accepted" : "Request Rejected",
-        description: accept 
-          ? "You have accepted the connection request" 
-          : "You have rejected the connection request",
-      });
-
       if (accept) {
-        navigate(`/meeting/${connectionId}`);
-      }
+        const { error } = await supabase
+          .from('skill_connections')
+          .update({ status: 'accepted' })
+          .eq('id', connectionId);
 
-      fetchConnectionRequests();
+        if (error) throw error;
+
+        navigate(`/meeting/${connectionId}`);
+      } else {
+        const { error } = await supabase
+          .from('skill_connections')
+          .update({ status: 'rejected' })
+          .eq('id', connectionId);
+
+        if (error) throw error;
+
+        // Remove the rejected request from the list
+        setConnectionRequests(prev => 
+          prev.filter(request => request.id !== connectionId)
+        );
+
+        toast({
+          title: "Request Rejected",
+          description: "You have rejected the connection request",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -303,6 +326,7 @@ const Index = () => {
       </main>
     </div>
   );
+
 };
 
 export default Index;
