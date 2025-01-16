@@ -24,7 +24,7 @@ interface ConnectionRequest {
   skill_id: string;
   learner_id: string;
   status: string;
-  skill: Skill;
+  skill: Skill | null;
 }
 
 const ITEMS_PER_PAGE = 6;
@@ -44,7 +44,6 @@ const Index = () => {
       fetchSkills();
       fetchConnectionRequests();
       
-      // Subscribe to connection updates
       const connectionSubscription = supabase
         .channel('connection-updates')
         .on(
@@ -58,11 +57,9 @@ const Index = () => {
             if (payload.eventType === 'UPDATE') {
               const updatedConnection = payload.new as any;
               if (updatedConnection.status === 'accepted') {
-                // Check if current user is either the learner or the instructor
                 if (updatedConnection.learner_id === user.id) {
                   navigate(`/meeting/${updatedConnection.id}`);
                 } else {
-                  // Check if user is the instructor
                   supabase
                     .from('skills')
                     .select('instructor_id')
@@ -118,8 +115,7 @@ const Index = () => {
     if (!user) return;
     
     try {
-      // Only fetch requests for skills where the current user is the instructor
-      const { data: instructorRequests, error: instructorError } = await supabase
+      const { data, error } = await supabase
         .from('skill_connections')
         .select(`
           *,
@@ -128,8 +124,11 @@ const Index = () => {
         .eq('status', 'pending')
         .filter('skill.instructor_id', 'eq', user.id);
 
-      if (instructorError) throw instructorError;
-      setConnectionRequests(instructorRequests || []);
+      if (error) throw error;
+      
+      // Filter out any requests where the skill data is null
+      const validRequests = (data || []).filter(request => request.skill !== null);
+      setConnectionRequests(validRequests);
     } catch (error: any) {
       console.error('Error fetching connection requests:', error);
       toast({
@@ -190,8 +189,6 @@ const Index = () => {
           .eq('id', connectionId);
 
         if (error) throw error;
-
-        // Navigation will happen through the realtime subscription
       } else {
         const { error } = await supabase
           .from('skill_connections')
@@ -275,32 +272,33 @@ const Index = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Connection Requests Section */}
         {connectionRequests.length > 0 && (
           <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4">Connection Requests</h2>
             <div className="space-y-4">
               {connectionRequests.map((request) => (
-                <div key={request.id} className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Request for: {request.skill.title}</p>
-                    <p className="text-sm text-gray-500">Level: {request.skill.level}</p>
+                request.skill && (
+                  <div key={request.id} className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Request for: {request.skill.title}</p>
+                      <p className="text-sm text-gray-500">Level: {request.skill.level}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="default"
+                        onClick={() => handleConnectionResponse(request.id, true)}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleConnectionResponse(request.id, false)}
+                      >
+                        Reject
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="default"
-                      onClick={() => handleConnectionResponse(request.id, true)}
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleConnectionResponse(request.id, false)}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                </div>
+                )
               ))}
             </div>
           </div>
@@ -339,7 +337,6 @@ const Index = () => {
       </main>
     </div>
   );
-
 };
 
 export default Index;
