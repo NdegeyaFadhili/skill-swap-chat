@@ -52,15 +52,29 @@ const Index = () => {
           {
             event: '*',
             schema: 'public',
-            table: 'skill_connections',
+            table: 'skill_connections'
           },
           (payload) => {
             if (payload.eventType === 'UPDATE') {
               const updatedConnection = payload.new as any;
               if (updatedConnection.status === 'accepted') {
-                navigate(`/meeting/${updatedConnection.id}`);
+                // Check if current user is either the learner or the instructor
+                if (updatedConnection.learner_id === user.id) {
+                  navigate(`/meeting/${updatedConnection.id}`);
+                } else {
+                  // Check if user is the instructor
+                  supabase
+                    .from('skills')
+                    .select('instructor_id')
+                    .eq('id', updatedConnection.skill_id)
+                    .single()
+                    .then(({ data }) => {
+                      if (data?.instructor_id === user.id) {
+                        navigate(`/meeting/${updatedConnection.id}`);
+                      }
+                    });
+                }
               } else if (updatedConnection.status === 'rejected') {
-                // Refresh connection requests to remove rejected ones
                 fetchConnectionRequests();
                 toast({
                   title: "Request Rejected",
@@ -68,7 +82,6 @@ const Index = () => {
                 });
               }
             } else if (payload.eventType === 'DELETE') {
-              // Refresh connection requests when a request is deleted
               fetchConnectionRequests();
             }
           }
@@ -105,14 +118,15 @@ const Index = () => {
     if (!user) return;
     
     try {
-      // For instructors: fetch requests for their skills
+      // Only fetch requests for skills where the current user is the instructor
       const { data: instructorRequests, error: instructorError } = await supabase
         .from('skill_connections')
         .select(`
           *,
           skill:skills(*)
         `)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .filter('skill.instructor_id', 'eq', user.id);
 
       if (instructorError) throw instructorError;
       setConnectionRequests(instructorRequests || []);
@@ -177,7 +191,7 @@ const Index = () => {
 
         if (error) throw error;
 
-        navigate(`/meeting/${connectionId}`);
+        // Navigation will happen through the realtime subscription
       } else {
         const { error } = await supabase
           .from('skill_connections')
@@ -186,7 +200,6 @@ const Index = () => {
 
         if (error) throw error;
 
-        // Remove the rejected request from the list
         setConnectionRequests(prev => 
           prev.filter(request => request.id !== connectionId)
         );
