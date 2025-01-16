@@ -38,7 +38,7 @@ export default function Meeting() {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!connectionId) return;
+    if (!connectionId || !user) return;
     
     const fetchConnection = async () => {
       const { data, error } = await supabase
@@ -51,7 +51,7 @@ export default function Meeting() {
         .eq('status', 'accepted')
         .single();
 
-      if (error) {
+      if (error || !data) {
         console.error('Error fetching connection:', error);
         toast({
           title: "Error",
@@ -62,10 +62,11 @@ export default function Meeting() {
         return;
       }
 
-      if (!data) {
+      // Verify that the current user is either the learner or the instructor
+      if (data.learner_id !== user.id && data.skill.instructor_id !== user.id) {
         toast({
-          title: "Not Found",
-          description: "This meeting is not available",
+          title: "Unauthorized",
+          description: "You don't have access to this meeting",
           variant: "destructive",
         });
         navigate('/');
@@ -76,7 +77,7 @@ export default function Meeting() {
     };
 
     fetchConnection();
-  }, [connectionId, navigate, toast]);
+  }, [connectionId, user, navigate, toast]);
 
   if (!connection) {
     return (

@@ -43,6 +43,29 @@ const Index = () => {
     if (user) {
       fetchSkills();
       fetchConnectionRequests();
+      
+      // Subscribe to connection updates
+      const connectionSubscription = supabase
+        .channel('connection-updates')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'skill_connections',
+            filter: `learner_id=eq.${user.id}`,
+          },
+          (payload) => {
+            if (payload.new.status === 'accepted') {
+              navigate(`/meeting/${payload.new.id}`);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        connectionSubscription.unsubscribe();
+      };
     }
   }, [user]);
 
@@ -149,7 +172,6 @@ const Index = () => {
         navigate(`/meeting/${connectionId}`);
       }
 
-      // Refresh the connection requests
       fetchConnectionRequests();
     } catch (error: any) {
       toast({
