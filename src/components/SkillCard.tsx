@@ -9,6 +9,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 interface SkillCardProps {
   skill: {
@@ -24,6 +27,8 @@ interface SkillCardProps {
 
 export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
@@ -41,6 +46,46 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
   };
 
   const isOwnSkill = user?.id === skill.instructor_id;
+
+  const handleMeetingTypeSelect = async (type: 'chat' | 'video' | 'audio') => {
+    if (!user) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to start a meeting.",
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('skill_connections')
+        .select('id, status')
+        .eq('skill_id', skill.id)
+        .eq('learner_id', user.id)
+        .eq('status', 'accepted')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      if (data) {
+        // Connection exists and is accepted, navigate to meeting
+        navigate(`/meeting/${data.id}?type=${type}`);
+      } else {
+        toast({
+          title: "Connection Required",
+          description: "Please connect with the instructor first.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <Card className="w-full max-w-md hover:shadow-lg transition-shadow duration-300">
@@ -69,7 +114,11 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon">
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => handleMeetingTypeSelect('chat')}
+                  >
                     <MessageSquare className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
@@ -82,7 +131,11 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon">
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => handleMeetingTypeSelect('video')}
+                  >
                     <Video className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
@@ -95,7 +148,11 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon">
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => handleMeetingTypeSelect('audio')}
+                  >
                     <PhoneCall className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>

@@ -1,14 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Video, PhoneCall } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +26,8 @@ interface Connection {
 
 export default function Meeting() {
   const { connectionId } = useParams();
+  const [searchParams] = useSearchParams();
+  const meetingType = searchParams.get('type') || 'chat';
   const [connection, setConnection] = useState<Connection | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -76,8 +72,63 @@ export default function Meeting() {
       setConnection(data);
     };
 
+    // Subscribe to connection updates
+    const channel = supabase.channel(`meeting:${connectionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'skill_connections',
+          filter: `id=eq.${connectionId}`
+        },
+        (payload) => {
+          if (payload.eventType === 'UPDATE') {
+            const updatedConnection = payload.new as any;
+            if (updatedConnection.status !== 'accepted') {
+              toast({
+                title: "Meeting Ended",
+                description: "This meeting has been ended",
+              });
+              navigate('/');
+            }
+          }
+        }
+      )
+      .subscribe();
+
     fetchConnection();
+
+    return () => {
+      channel.unsubscribe();
+    };
   }, [connectionId, user, navigate, toast]);
+
+  const getMeetingIcon = () => {
+    switch (meetingType) {
+      case 'chat':
+        return <MessageSquare className="h-6 w-6" />;
+      case 'video':
+        return <Video className="h-6 w-6" />;
+      case 'audio':
+        return <PhoneCall className="h-6 w-6" />;
+      default:
+        return <MessageSquare className="h-6 w-6" />;
+    }
+  };
+
+  const getMeetingTitle = () => {
+    switch (meetingType) {
+      case 'chat':
+        return 'Chat Session';
+      case 'video':
+        return 'Video Call';
+      case 'audio':
+        return 'Audio Call';
+      default:
+        return 'Meeting';
+    }
+  };
 
   if (!connection) {
     return (
@@ -87,15 +138,16 @@ export default function Meeting() {
     );
   }
 
-  const isInstructor = user?.id === connection.skill.instructor_id;
-
   return (
     <div className="container mx-auto px-4 py-8">
       <Card className="max-w-3xl mx-auto">
         <CardHeader>
-          <CardTitle className="text-2xl">
-            {connection.skill.title} - Learning Session
-          </CardTitle>
+          <div className="flex items-center gap-2">
+            {getMeetingIcon()}
+            <CardTitle className="text-2xl">
+              {connection.skill.title} - {getMeetingTitle()}
+            </CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="mb-6">
@@ -104,48 +156,22 @@ export default function Meeting() {
           </div>
           
           <div className="space-y-4">
-            <div className="flex justify-center gap-4">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="lg" className="flex items-center gap-2">
-                      <MessageSquare className="h-5 w-5" />
-                      Start Chat
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Start a chat session</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="lg" variant="outline" className="flex items-center gap-2">
-                      <Video className="h-5 w-5" />
-                      Video Call
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Start a video call</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="lg" variant="outline" className="flex items-center gap-2">
-                      <PhoneCall className="h-5 w-5" />
-                      Audio Call
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Start an audio call</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+            <div className="flex justify-center">
+              {meetingType === 'chat' && (
+                <div className="w-full max-w-2xl bg-gray-50 rounded-lg p-4">
+                  <p className="text-center text-gray-500">Chat interface will be implemented here</p>
+                </div>
+              )}
+              {meetingType === 'video' && (
+                <div className="w-full max-w-2xl bg-gray-50 rounded-lg p-4 aspect-video">
+                  <p className="text-center text-gray-500">Video interface will be implemented here</p>
+                </div>
+              )}
+              {meetingType === 'audio' && (
+                <div className="w-full max-w-2xl bg-gray-50 rounded-lg p-4">
+                  <p className="text-center text-gray-500">Audio interface will be implemented here</p>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
