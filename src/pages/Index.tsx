@@ -44,6 +44,21 @@ const Index = () => {
       fetchSkills();
       fetchConnectionRequests();
       
+      const skillsSubscription = supabase
+        .channel('skills-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'skills'
+          },
+          () => {
+            fetchSkills();
+          }
+        )
+        .subscribe();
+      
       const connectionSubscription = supabase
         .channel('connection-updates')
         .on(
@@ -86,6 +101,7 @@ const Index = () => {
         .subscribe();
 
       return () => {
+        skillsSubscription.unsubscribe();
         connectionSubscription.unsubscribe();
       };
     }
@@ -323,6 +339,7 @@ const Index = () => {
                   key={skill.id}
                   skill={skill}
                   onConnect={() => handleConnect(skill)}
+                  onDelete={() => fetchSkills()}
                 />
               ))}
             </div>

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Video, PhoneCall } from "lucide-react";
+import { MessageSquare, Video, PhoneCall, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -23,9 +23,10 @@ interface SkillCardProps {
     instructor_id: string;
   };
   onConnect: () => void;
+  onDelete?: () => void;
 }
 
-export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
+export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -46,6 +47,31 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
   };
 
   const isOwnSkill = user?.id === skill.instructor_id;
+
+  const handleDelete = async () => {
+    try {
+      const { error } = await supabase
+        .from('skills')
+        .delete()
+        .eq('id', skill.id)
+        .eq('instructor_id', user?.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Skill Deleted",
+        description: "Your skill has been successfully deleted.",
+      });
+
+      if (onDelete) onDelete();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleMeetingTypeSelect = async (type: 'chat' | 'video' | 'audio') => {
     if (!user) {
@@ -103,13 +129,40 @@ export const SkillCard = ({ skill, onConnect }: SkillCardProps) => {
       <CardContent>
         <p className="text-gray-600 mb-4">{skill.description}</p>
         <div className="space-y-3">
-          <Button 
-            onClick={onConnect} 
-            className="w-full bg-primary hover:bg-primary/90"
-            disabled={isOwnSkill}
-          >
-            {isOwnSkill ? "Your Skill" : "Connect & Learn"}
-          </Button>
+          {isOwnSkill ? (
+            <div className="flex justify-between gap-2">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                disabled={true}
+              >
+                Your Skill
+              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      size="icon"
+                      onClick={handleDelete}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Delete Skill</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          ) : (
+            <Button 
+              onClick={onConnect} 
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              Connect & Learn
+            </Button>
+          )}
           <div className="flex justify-center gap-2">
             <TooltipProvider>
               <Tooltip>
