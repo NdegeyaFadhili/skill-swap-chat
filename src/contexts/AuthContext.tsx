@@ -26,6 +26,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
+          if (error.message.includes('refresh_token_not_found')) {
+            await signOut();
+            return;
+          }
           console.error('Error getting session:', error.message);
           throw error;
         }
@@ -46,13 +50,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event);
       
-      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-        setUser(session?.user ?? null);
-      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-        setUser(null);
-        navigate('/');
-      } else if (event === 'USER_UPDATED') {
-        setUser(session?.user ?? null);
+      switch (event) {
+        case 'SIGNED_IN':
+        case 'TOKEN_REFRESHED':
+        case 'USER_UPDATED':
+          setUser(session?.user ?? null);
+          break;
+        case 'SIGNED_OUT':
+          setUser(null);
+          navigate('/');
+          break;
+        default:
+          break;
       }
       
       setLoading(false);
