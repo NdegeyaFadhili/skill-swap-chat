@@ -44,7 +44,8 @@ const Index = () => {
       fetchSkills();
       fetchConnectionRequests();
       
-      const skillsSubscription = supabase
+      // Subscribe to skills changes
+      const skillsChannel = supabase
         .channel('skills-changes')
         .on(
           'postgres_changes',
@@ -53,13 +54,27 @@ const Index = () => {
             schema: 'public',
             table: 'skills'
           },
-          () => {
-            fetchSkills();
+          (payload) => {
+            console.log('Skills change received:', payload);
+            if (payload.eventType === 'INSERT') {
+              setSkills(currentSkills => [...currentSkills, payload.new as Skill]);
+            } else if (payload.eventType === 'DELETE') {
+              setSkills(currentSkills => 
+                currentSkills.filter(skill => skill.id !== payload.old.id)
+              );
+            } else if (payload.eventType === 'UPDATE') {
+              setSkills(currentSkills =>
+                currentSkills.map(skill =>
+                  skill.id === payload.new.id ? { ...skill, ...payload.new } : skill
+                )
+              );
+            }
           }
         )
         .subscribe();
-      
-      const connectionSubscription = supabase
+
+      // Subscribe to connection requests changes
+      const connectionsChannel = supabase
         .channel('connection-updates')
         .on(
           'postgres_changes',
@@ -68,44 +83,49 @@ const Index = () => {
             schema: 'public',
             table: 'skill_connections'
           },
-          (payload) => {
+          async (payload) => {
+            console.log('Connection change received:', payload);
             if (payload.eventType === 'UPDATE') {
               const updatedConnection = payload.new as any;
+              
               if (updatedConnection.status === 'accepted') {
                 if (updatedConnection.learner_id === user.id) {
                   navigate(`/meeting/${updatedConnection.id}`);
                 } else {
-                  supabase
+                  const { data } = await supabase
                     .from('skills')
                     .select('instructor_id')
                     .eq('id', updatedConnection.skill_id)
-                    .single()
-                    .then(({ data }) => {
-                      if (data?.instructor_id === user.id) {
-                        navigate(`/meeting/${updatedConnection.id}`);
-                      }
-                    });
+                    .single();
+                    
+                  if (data?.instructor_id === user.id) {
+                    navigate(`/meeting/${updatedConnection.id}`);
+                  }
                 }
               } else if (updatedConnection.status === 'rejected') {
-                fetchConnectionRequests();
+                await fetchConnectionRequests();
                 toast({
                   title: "Request Rejected",
                   description: "The connection request has been rejected.",
                 });
               }
+            } else if (payload.eventType === 'INSERT') {
+              if (payload.new.status === 'pending') {
+                await fetchConnectionRequests();
+              }
             } else if (payload.eventType === 'DELETE') {
-              fetchConnectionRequests();
+              await fetchConnectionRequests();
             }
           }
         )
         .subscribe();
 
       return () => {
-        skillsSubscription.unsubscribe();
-        connectionSubscription.unsubscribe();
+        supabase.removeChannel(skillsChannel);
+        supabase.removeChannel(connectionsChannel);
       };
     }
-  }, [user]);
+  }, [user, navigate, toast]);
 
   const fetchSkills = async () => {
     try {
