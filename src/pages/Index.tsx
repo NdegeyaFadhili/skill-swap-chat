@@ -123,19 +123,25 @@ const Index = () => {
                   title: "New Connection Request",
                   description: `Someone wants to learn ${skillData.title}!`,
                 });
-              } else if (payload.eventType === 'UPDATE') {
+              } else if (payload.eventType === 'UPDATE' && newPayload.status === 'accepted') {
+                // Remove the request from the list and navigate to meeting
                 setConnectionRequests(current =>
                   current.filter(req => req.id !== newPayload.id)
                 );
+                navigate(`/meeting/${newPayload.id}?type=video`);
+                toast({
+                  title: "Meeting Started",
+                  description: "You've joined the meeting room.",
+                });
               }
             } else if (newPayload.learner_id === user.id) {
               // This is a connection request where the current user is the learner
               if (payload.eventType === 'UPDATE') {
                 if (newPayload.status === 'accepted') {
-                  navigate(`/meeting/${newPayload.id}`);
+                  navigate(`/meeting/${newPayload.id}?type=video`);
                   toast({
                     title: "Request Accepted!",
-                    description: "Your connection request has been accepted.",
+                    description: "You've joined the meeting room.",
                   });
                 } else if (newPayload.status === 'rejected') {
                   toast({
