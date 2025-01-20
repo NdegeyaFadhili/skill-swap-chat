@@ -9,6 +9,7 @@ import { AuthForm } from "@/components/AuthForm";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 interface Skill {
   id: string;
@@ -25,6 +26,14 @@ interface ConnectionRequest {
   learner_id: string;
   status: string;
   skill: Skill | null;
+}
+
+// Type for the real-time payload
+interface SkillConnectionPayload {
+  id: string;
+  skill_id: string;
+  learner_id: string;
+  status: string;
 }
 
 const ITEMS_PER_PAGE = 6;
@@ -54,10 +63,10 @@ const Index = () => {
             schema: 'public',
             table: 'skills'
           },
-          (payload) => {
+          (payload: RealtimePostgresChangesPayload<Skill>) => {
             console.log('Skills change received:', payload);
             if (payload.eventType === 'INSERT') {
-              setSkills(currentSkills => [...currentSkills, payload.new as Skill]);
+              setSkills(currentSkills => [...currentSkills, payload.new]);
             } else if (payload.eventType === 'DELETE') {
               setSkills(currentSkills => 
                 currentSkills.filter(skill => skill.id !== payload.old.id)
@@ -83,9 +92,11 @@ const Index = () => {
             schema: 'public',
             table: 'skill_connections'
           },
-          async (payload) => {
+          async (payload: RealtimePostgresChangesPayload<SkillConnectionPayload>) => {
             console.log('Connection change received:', payload);
             
+            if (!payload.new.skill_id) return;
+
             // Fetch the associated skill for the connection
             const { data: skillData } = await supabase
               .from('skills')
@@ -96,8 +107,11 @@ const Index = () => {
             if (skillData?.instructor_id === user.id) {
               // This is a connection request for a skill where the current user is the instructor
               if (payload.eventType === 'INSERT') {
-                const newRequest = {
-                  ...payload.new,
+                const newRequest: ConnectionRequest = {
+                  id: payload.new.id,
+                  skill_id: payload.new.skill_id,
+                  learner_id: payload.new.learner_id,
+                  status: payload.new.status,
                   skill: skillData
                 };
                 setConnectionRequests(current => [...current, newRequest]);
