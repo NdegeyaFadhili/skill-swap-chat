@@ -343,7 +343,7 @@ const Index = () => {
         {showForm && (
           <div className="mb-8 bg-white p-6 rounded-lg shadow-sm">
             <h2 className="text-xl font-semibold mb-4">Add Your Skill</h2>
-            <SkillForm />
+            <SkillForm onSuccess={() => setShowForm(false)} />
           </div>
         )}
 
@@ -359,7 +359,10 @@ const Index = () => {
                   key={skill.id}
                   skill={skill}
                   onConnect={() => handleConnect(skill)}
-                  onDelete={() => fetchSkills()}
+                  onDelete={() => {
+                    // No need to fetch skills as we're using real-time updates
+                    console.log('Skill deleted');
+                  }}
                 />
               ))}
             </div>

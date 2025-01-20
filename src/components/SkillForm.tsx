@@ -25,7 +25,11 @@ const formSchema = z.object({
   level: z.string().min(1, "Please select a level"),
 });
 
-export const SkillForm = () => {
+interface SkillFormProps {
+  onSuccess?: () => void;
+}
+
+export const SkillForm = ({ onSuccess }: SkillFormProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,7 +56,6 @@ export const SkillForm = () => {
 
     setIsSubmitting(true);
     try {
-      // Create the skill with all required fields
       const skillData = {
         title: values.title,
         description: values.description,
@@ -71,7 +74,11 @@ export const SkillForm = () => {
         title: "Skill Added Successfully!",
         description: "Your skill has been added to the marketplace.",
       });
+      
       form.reset();
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (error: any) {
       toast({
         title: "Error",
