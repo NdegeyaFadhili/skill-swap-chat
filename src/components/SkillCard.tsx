@@ -46,15 +46,18 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
     }
   };
 
-  const isOwnSkill = user?.id === skill.instructor_id;
+  // Check if the current user is the instructor of this skill
+  const isInstructor = user?.id === skill.instructor_id;
 
   const handleDelete = async () => {
+    if (!user) return;
+    
     try {
       const { error } = await supabase
         .from('skills')
         .delete()
         .eq('id', skill.id)
-        .eq('instructor_id', user?.id);
+        .eq('instructor_id', user.id);
 
       if (error) throw error;
 
@@ -96,7 +99,6 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
       }
 
       if (data) {
-        // Connection exists and is accepted, navigate to meeting
         navigate(`/meeting/${data.id}?type=${type}`);
       } else {
         toast({
@@ -129,40 +131,42 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
       <CardContent>
         <p className="text-gray-600 mb-4">{skill.description}</p>
         <div className="space-y-3">
-          {isOwnSkill ? (
-            <div className="flex justify-between gap-2">
+          <div className="flex justify-between gap-2">
+            {isInstructor ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  disabled={true}
+                >
+                  Your Skill
+                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="destructive" 
+                        size="icon"
+                        onClick={handleDelete}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Delete Skill</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </>
+            ) : (
               <Button 
-                variant="outline" 
-                className="w-full"
-                disabled={true}
+                onClick={onConnect} 
+                className="w-full bg-primary hover:bg-primary/90"
               >
-                Your Skill
+                Connect & Learn
               </Button>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      size="icon"
-                      onClick={handleDelete}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Delete Skill</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          ) : (
-            <Button 
-              onClick={onConnect} 
-              className="w-full bg-primary hover:bg-primary/90"
-            >
-              Connect & Learn
-            </Button>
-          )}
+            )}
+          </div>
           <div className="flex justify-center gap-2">
             <TooltipProvider>
               <Tooltip>
