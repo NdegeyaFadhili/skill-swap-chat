@@ -85,36 +85,48 @@ const Index = () => {
           },
           async (payload) => {
             console.log('Connection change received:', payload);
-            if (payload.eventType === 'UPDATE') {
-              const updatedConnection = payload.new as any;
-              
-              if (updatedConnection.status === 'accepted') {
-                if (updatedConnection.learner_id === user.id) {
-                  navigate(`/meeting/${updatedConnection.id}`);
-                } else {
-                  const { data } = await supabase
-                    .from('skills')
-                    .select('instructor_id')
-                    .eq('id', updatedConnection.skill_id)
-                    .single();
-                    
-                  if (data?.instructor_id === user.id) {
-                    navigate(`/meeting/${updatedConnection.id}`);
-                  }
-                }
-              } else if (updatedConnection.status === 'rejected') {
-                await fetchConnectionRequests();
+            
+            // Fetch the associated skill for the connection
+            const { data: skillData } = await supabase
+              .from('skills')
+              .select('*')
+              .eq('id', payload.new.skill_id)
+              .single();
+
+            if (skillData?.instructor_id === user.id) {
+              // This is a connection request for a skill where the current user is the instructor
+              if (payload.eventType === 'INSERT') {
+                const newRequest = {
+                  ...payload.new,
+                  skill: skillData
+                };
+                setConnectionRequests(current => [...current, newRequest]);
+                
                 toast({
-                  title: "Request Rejected",
-                  description: "The connection request has been rejected.",
+                  title: "New Connection Request",
+                  description: `Someone wants to learn ${skillData.title}!`,
                 });
+              } else if (payload.eventType === 'UPDATE') {
+                setConnectionRequests(current =>
+                  current.filter(req => req.id !== payload.new.id)
+                );
               }
-            } else if (payload.eventType === 'INSERT') {
-              if (payload.new.status === 'pending') {
-                await fetchConnectionRequests();
+            } else if (payload.new.learner_id === user.id) {
+              // This is a connection request where the current user is the learner
+              if (payload.eventType === 'UPDATE') {
+                if (payload.new.status === 'accepted') {
+                  navigate(`/meeting/${payload.new.id}`);
+                  toast({
+                    title: "Request Accepted!",
+                    description: "Your connection request has been accepted.",
+                  });
+                } else if (payload.new.status === 'rejected') {
+                  toast({
+                    title: "Request Rejected",
+                    description: "Your connection request has been rejected.",
+                  });
+                }
               }
-            } else if (payload.eventType === 'DELETE') {
-              await fetchConnectionRequests();
             }
           }
         )
@@ -157,13 +169,15 @@ const Index = () => {
           *,
           skill:skills(*)
         `)
-        .eq('status', 'pending')
-        .filter('skill.instructor_id', 'eq', user.id);
+        .eq('status', 'pending');
 
       if (error) throw error;
       
-      // Filter out any requests where the skill data is null
-      const validRequests = (data || []).filter(request => request.skill !== null);
+      // Filter requests to only show those for skills where the current user is the instructor
+      const validRequests = (data || []).filter(request => 
+        request.skill && request.skill.instructor_id === user.id
+      );
+      
       setConnectionRequests(validRequests);
     } catch (error: any) {
       console.error('Error fetching connection requests:', error);
@@ -218,30 +232,27 @@ const Index = () => {
 
   const handleConnectionResponse = async (connectionId: string, accept: boolean) => {
     try {
-      if (accept) {
-        const { error } = await supabase
-          .from('skill_connections')
-          .update({ status: 'accepted' })
-          .eq('id', connectionId);
+      const { error } = await supabase
+        .from('skill_connections')
+        .update({ 
+          status: accept ? 'accepted' : 'rejected',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', connectionId);
 
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('skill_connections')
-          .update({ status: 'rejected' })
-          .eq('id', connectionId);
+      if (error) throw error;
 
-        if (error) throw error;
+      // Remove the request from the list
+      setConnectionRequests(prev => 
+        prev.filter(request => request.id !== connectionId)
+      );
 
-        setConnectionRequests(prev => 
-          prev.filter(request => request.id !== connectionId)
-        );
-
-        toast({
-          title: "Request Rejected",
-          description: "You have rejected the connection request",
-        });
-      }
+      toast({
+        title: accept ? "Request Accepted" : "Request Rejected",
+        description: accept 
+          ? "You have accepted the connection request" 
+          : "You have rejected the connection request",
+      });
     } catch (error: any) {
       toast({
         title: "Error",
