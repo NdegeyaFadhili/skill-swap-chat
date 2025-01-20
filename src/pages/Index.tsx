@@ -28,7 +28,7 @@ interface ConnectionRequest {
   skill: Skill | null;
 }
 
-// Type for the real-time payload
+// Type for the real-time payload with proper type guards
 interface SkillConnectionPayload {
   id: string;
   skill_id: string;
@@ -95,23 +95,26 @@ const Index = () => {
           async (payload: RealtimePostgresChangesPayload<SkillConnectionPayload>) => {
             console.log('Connection change received:', payload);
             
-            if (!payload.new.skill_id) return;
-
+            // Type guard to ensure payload.new exists and has the required properties
+            if (!payload.new || !('skill_id' in payload.new)) return;
+            
+            const newPayload = payload.new as SkillConnectionPayload;
+            
             // Fetch the associated skill for the connection
             const { data: skillData } = await supabase
               .from('skills')
               .select('*')
-              .eq('id', payload.new.skill_id)
+              .eq('id', newPayload.skill_id)
               .single();
 
             if (skillData?.instructor_id === user.id) {
               // This is a connection request for a skill where the current user is the instructor
               if (payload.eventType === 'INSERT') {
                 const newRequest: ConnectionRequest = {
-                  id: payload.new.id,
-                  skill_id: payload.new.skill_id,
-                  learner_id: payload.new.learner_id,
-                  status: payload.new.status,
+                  id: newPayload.id,
+                  skill_id: newPayload.skill_id,
+                  learner_id: newPayload.learner_id,
+                  status: newPayload.status,
                   skill: skillData
                 };
                 setConnectionRequests(current => [...current, newRequest]);
@@ -122,19 +125,19 @@ const Index = () => {
                 });
               } else if (payload.eventType === 'UPDATE') {
                 setConnectionRequests(current =>
-                  current.filter(req => req.id !== payload.new.id)
+                  current.filter(req => req.id !== newPayload.id)
                 );
               }
-            } else if (payload.new.learner_id === user.id) {
+            } else if (newPayload.learner_id === user.id) {
               // This is a connection request where the current user is the learner
               if (payload.eventType === 'UPDATE') {
-                if (payload.new.status === 'accepted') {
-                  navigate(`/meeting/${payload.new.id}`);
+                if (newPayload.status === 'accepted') {
+                  navigate(`/meeting/${newPayload.id}`);
                   toast({
                     title: "Request Accepted!",
                     description: "Your connection request has been accepted.",
                   });
-                } else if (payload.new.status === 'rejected') {
+                } else if (newPayload.status === 'rejected') {
                   toast({
                     title: "Request Rejected",
                     description: "Your connection request has been rejected.",
