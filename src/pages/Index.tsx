@@ -270,10 +270,15 @@ const Index = () => {
         prev.filter(request => request.id !== connectionId)
       );
 
+      if (accept) {
+        // Immediately navigate to the meeting page after accepting
+        navigate(`/meeting/${connectionId}?type=video`);
+      }
+
       toast({
         title: accept ? "Request Accepted" : "Request Rejected",
         description: accept 
-          ? "You have accepted the connection request" 
+          ? "Joining meeting room..." 
           : "You have rejected the connection request",
       });
     } catch (error: any) {
