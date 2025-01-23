@@ -40,6 +40,7 @@ export default function Meeting() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -84,9 +85,9 @@ export default function Meeting() {
 
       setConnection(data);
 
-      // Auto-start media if it's a video/audio call
+      // Check device permissions before auto-starting media
       if (meetingType !== 'chat') {
-        startMediaStream(meetingType as 'video' | 'audio');
+        checkDevicePermissions(meetingType as 'video' | 'audio');
       }
     };
 
@@ -135,23 +136,73 @@ export default function Meeting() {
     };
   }, [connectionId, user, navigate, toast, meetingType]);
 
+  const checkDevicePermissions = async (type: 'video' | 'audio') => {
+    try {
+      // First check if the devices are available
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hasVideoDevice = devices.some(device => device.kind === 'videoinput');
+      const hasAudioDevice = devices.some(device => device.kind === 'audioinput');
+
+      if (type === 'video' && !hasVideoDevice) {
+        setDeviceError('No camera found. Please connect a camera and try again.');
+        return;
+      }
+
+      if (!hasAudioDevice) {
+        setDeviceError('No microphone found. Please connect a microphone and try again.');
+        return;
+      }
+
+      // If devices are available, try to start the media stream
+      await startMediaStream(type);
+      setDeviceError(null);
+    } catch (error: any) {
+      console.error('Error checking device permissions:', error);
+      setDeviceError(error.message);
+      toast({
+        title: "Device Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const startMediaStream = async (type: 'video' | 'audio') => {
     try {
+      // Request permissions first
+      await navigator.mediaDevices.getUserMedia({
+        video: type === 'video',
+        audio: true,
+      });
+
+      // If permissions granted, get the stream
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: type === 'video',
         audio: true,
       });
+      
       setStream(mediaStream);
       toast({
         title: `${type === 'video' ? 'Video' : 'Audio'} Started`,
         description: "Your media stream is now active",
       });
     } catch (error: any) {
+      console.error('Error starting media stream:', error);
+      let errorMessage = error.message;
+      
+      if (error.name === 'NotFoundError') {
+        errorMessage = `${type === 'video' ? 'Camera' : 'Microphone'} not found. Please check your device connections.`;
+      } else if (error.name === 'NotAllowedError') {
+        errorMessage = `Please allow access to your ${type === 'video' ? 'camera' : 'microphone'} to join the meeting.`;
+      }
+      
+      setDeviceError(errorMessage);
       toast({
         title: "Media Error",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
+      throw error;
     }
   };
 
@@ -252,6 +303,12 @@ export default function Meeting() {
           </div>
         </CardHeader>
         <CardContent>
+          {deviceError && (
+            <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-lg">
+              {deviceError}
+            </div>
+          )}
+          
           {meetingType === 'chat' && (
             <div className="space-y-4">
               <ScrollArea className="h-[400px] w-full rounded-md border p-4">
@@ -306,7 +363,7 @@ export default function Meeting() {
               <div className="flex justify-center gap-4">
                 <Button
                   variant={stream ? "destructive" : "default"}
-                  onClick={() => stream ? stopMediaStream() : startMediaStream(meetingType as 'video' | 'audio')}
+                  onClick={() => stream ? stopMediaStream() : checkDevicePermissions(meetingType as 'video' | 'audio')}
                 >
                   {stream ? 'Stop' : 'Start'} {meetingType === 'video' ? 'Video' : 'Audio'}
                 </Button>
