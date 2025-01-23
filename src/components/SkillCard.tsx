@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useEffect } from "react";
 
 interface SkillCardProps {
   skill: {
@@ -31,6 +32,37 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
+  // Listen for connection status changes
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('connection-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'skill_connections',
+          filter: `skill_id=eq.${skill.id}`,
+        },
+        async (payload: any) => {
+          if (payload.new.status === 'accepted' && payload.new.learner_id === user.id) {
+            navigate(`/meeting/${payload.new.id}?type=video`);
+            toast({
+              title: "Connection Accepted!",
+              description: "Joining the meeting room...",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, skill.id, navigate, toast]);
+
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
       case 'beginner':
@@ -46,7 +78,6 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
     }
   };
 
-  // Check if the current user is the instructor of this skill
   const isInstructor = user?.id === skill.instructor_id;
 
   const handleDelete = async () => {
