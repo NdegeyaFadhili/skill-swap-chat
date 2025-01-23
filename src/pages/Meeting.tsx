@@ -40,13 +40,15 @@ export default function Meeting() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!connectionId || !user) return;
+    if (!connectionId || !user) {
+      navigate('/');
+      return;
+    }
     
     const fetchConnection = async () => {
       const { data, error } = await supabase
@@ -81,10 +83,24 @@ export default function Meeting() {
       }
 
       setConnection(data);
+
+      // Auto-start media if it's a video/audio call
+      if (meetingType !== 'chat') {
+        startMediaStream(meetingType as 'video' | 'audio');
+      }
     };
 
+    // Subscribe to real-time messages
+    const messageChannel = supabase.channel(`chat:${connectionId}`)
+      .on('broadcast', { event: 'message' }, ({ payload }) => {
+        if (payload) {
+          setMessages(prev => [...prev, payload]);
+        }
+      })
+      .subscribe();
+
     // Subscribe to connection updates
-    const channel = supabase.channel(`meeting:${connectionId}`)
+    const connectionChannel = supabase.channel(`meeting:${connectionId}`)
       .on(
         'postgres_changes',
         {
@@ -108,23 +124,16 @@ export default function Meeting() {
       )
       .subscribe();
 
-    // Subscribe to real-time messages
-    const messageChannel = supabase.channel(`chat:${connectionId}`)
-      .on('broadcast', { event: 'message' }, ({ payload }) => {
-        setMessages(prev => [...prev, payload]);
-      })
-      .subscribe();
-
     fetchConnection();
 
     return () => {
-      channel.unsubscribe();
       messageChannel.unsubscribe();
+      connectionChannel.unsubscribe();
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [connectionId, user, navigate, toast]);
+  }, [connectionId, user, navigate, toast, meetingType]);
 
   const startMediaStream = async (type: 'video' | 'audio') => {
     try {
@@ -188,12 +197,10 @@ export default function Meeting() {
     }
   };
 
-  useEffect(() => {
-    if (meetingType !== 'chat') {
-      startMediaStream(meetingType as 'video' | 'audio');
-    }
-    return () => stopMediaStream();
-  }, [meetingType]);
+  const switchMeetingType = (type: string) => {
+    stopMediaStream();
+    navigate(`/meeting/${connectionId}?type=${type}`);
+  };
 
   if (!connection) {
     return (
@@ -208,13 +215,36 @@ export default function Meeting() {
       <Card className="max-w-3xl mx-auto">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {meetingType === 'chat' && <MessageSquare className="h-6 w-6" />}
-              {meetingType === 'video' && <Video className="h-6 w-6" />}
-              {meetingType === 'audio' && <PhoneCall className="h-6 w-6" />}
-              <CardTitle className="text-2xl">
-                {connection.skill.title} - {meetingType.charAt(0).toUpperCase() + meetingType.slice(1)}
+            <div>
+              <CardTitle className="text-2xl mb-2">
+                {connection.skill.title}
               </CardTitle>
+              <div className="flex gap-4">
+                <Button
+                  variant={meetingType === 'chat' ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => switchMeetingType('chat')}
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Chat
+                </Button>
+                <Button
+                  variant={meetingType === 'video' ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => switchMeetingType('video')}
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  Video
+                </Button>
+                <Button
+                  variant={meetingType === 'audio' ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => switchMeetingType('audio')}
+                >
+                  <PhoneCall className="h-4 w-4 mr-2" />
+                  Audio
+                </Button>
+              </div>
             </div>
             <Button variant="destructive" size="icon" onClick={endMeeting}>
               <X className="h-4 w-4" />
@@ -269,20 +299,6 @@ export default function Meeting() {
                     }}
                     className="w-full h-full object-cover"
                     muted
-                    playsInline
-                  />
-                </div>
-              )}
-              {remoteStream && (
-                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                  <video
-                    ref={(videoEl) => {
-                      if (videoEl && remoteStream) {
-                        videoEl.srcObject = remoteStream;
-                        videoEl.play();
-                      }
-                    }}
-                    className="w-full h-full object-cover"
                     playsInline
                   />
                 </div>
