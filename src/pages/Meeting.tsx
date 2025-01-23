@@ -29,7 +29,7 @@ interface Connection {
   skill_id: string;
   learner_id: string;
   status: string;
-  skill: Skill;
+  skill: Skill | null;
 }
 
 export default function Meeting() {
@@ -73,6 +73,7 @@ export default function Meeting() {
         return;
       }
 
+      // Check if the current user is either the learner or the instructor
       if (data.learner_id !== user.id && data.skill.instructor_id !== user.id) {
         toast({
           title: "Unauthorized",
@@ -268,7 +269,7 @@ export default function Meeting() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-2xl mb-2">
-                {connection.skill.title}
+                {connection.skill?.title}
               </CardTitle>
               <div className="flex gap-4">
                 <Button
