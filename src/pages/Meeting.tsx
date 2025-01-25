@@ -41,6 +41,7 @@ export default function Meeting() {
   const [newMessage, setNewMessage] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -52,43 +53,58 @@ export default function Meeting() {
     }
     
     const fetchConnection = async () => {
-      const { data, error } = await supabase
-        .from('skill_connections')
-        .select(`
-          *,
-          skill:skills(*)
-        `)
-        .eq('id', connectionId)
-        .eq('status', 'accepted')
-        .single();
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('skill_connections')
+          .select(`
+            *,
+            skill:skills(*)
+          `)
+          .eq('id', connectionId)
+          .eq('status', 'accepted')
+          .maybeSingle();
 
-      if (error || !data) {
+        if (error) throw error;
+
+        if (!data) {
+          toast({
+            title: "Meeting Not Found",
+            description: "This meeting may have ended or doesn't exist.",
+            variant: "destructive",
+          });
+          navigate('/');
+          return;
+        }
+
+        // Check if the current user is either the learner or the instructor
+        if (data.learner_id !== user.id && data.skill?.instructor_id !== user.id) {
+          toast({
+            title: "Unauthorized",
+            description: "You don't have access to this meeting",
+            variant: "destructive",
+          });
+          navigate('/');
+          return;
+        }
+
+        setConnection(data);
+        console.log("Connection loaded:", data);
+
+        // Check device permissions for media types
+        if (meetingType !== 'chat') {
+          checkDevicePermissions(meetingType as 'video' | 'audio');
+        }
+      } catch (error: any) {
         console.error('Error fetching connection:', error);
         toast({
           title: "Error",
-          description: "Unable to load meeting details",
+          description: error.message,
           variant: "destructive",
         });
         navigate('/');
-        return;
-      }
-
-      // Check if the current user is either the learner or the instructor
-      if (data.learner_id !== user.id && data.skill.instructor_id !== user.id) {
-        toast({
-          title: "Unauthorized",
-          description: "You don't have access to this meeting",
-          variant: "destructive",
-        });
-        navigate('/');
-        return;
-      }
-
-      setConnection(data);
-
-      // Check device permissions before auto-starting media
-      if (meetingType !== 'chat') {
-        checkDevicePermissions(meetingType as 'video' | 'audio');
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -254,10 +270,18 @@ export default function Meeting() {
     navigate(`/meeting/${connectionId}?type=${type}`);
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Loading meeting details...</p>
+      </div>
+    );
+  }
+
   if (!connection) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p>Loading meeting...</p>
+        <p>Unable to load meeting details. Please try again.</p>
       </div>
     );
   }
