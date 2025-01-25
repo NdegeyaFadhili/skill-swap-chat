@@ -82,7 +82,7 @@ const Index = () => {
         )
         .subscribe();
 
-      // Subscribe to connection requests changes
+      // Subscribe to connection requests changes - Updated to handle both instructor and learner
       const connectionsChannel = supabase
         .channel('connection-updates')
         .on(
@@ -95,7 +95,6 @@ const Index = () => {
           async (payload: RealtimePostgresChangesPayload<SkillConnectionPayload>) => {
             console.log('Connection change received:', payload);
             
-            // Type guard to ensure payload.new exists and has the required properties
             if (!payload.new || !('skill_id' in payload.new)) return;
             
             const newPayload = payload.new as SkillConnectionPayload;
@@ -107,49 +106,38 @@ const Index = () => {
               .eq('id', newPayload.skill_id)
               .single();
 
-            if (skillData?.instructor_id === user.id) {
-              // This is a connection request for a skill where the current user is the instructor
-              if (payload.eventType === 'INSERT') {
-                const newRequest: ConnectionRequest = {
-                  id: newPayload.id,
-                  skill_id: newPayload.skill_id,
-                  learner_id: newPayload.learner_id,
-                  status: newPayload.status,
-                  skill: skillData
-                };
-                setConnectionRequests(current => [...current, newRequest]);
-                
-                toast({
-                  title: "New Connection Request",
-                  description: `Someone wants to learn ${skillData.title}!`,
-                });
-              } else if (payload.eventType === 'UPDATE' && newPayload.status === 'accepted') {
-                // Remove the request from the list and navigate to meeting
+            // Handle connection updates for both instructor and learner
+            if (payload.eventType === 'UPDATE' && newPayload.status === 'accepted') {
+              if (skillData?.instructor_id === user.id || newPayload.learner_id === user.id) {
+                // Remove the request from the list if it exists
                 setConnectionRequests(current =>
                   current.filter(req => req.id !== newPayload.id)
                 );
+                
+                // Navigate to meeting for both users
                 navigate(`/meeting/${newPayload.id}?type=video`);
                 toast({
                   title: "Meeting Started",
-                  description: "You've joined the meeting room.",
+                  description: skillData?.instructor_id === user.id 
+                    ? "You've joined the meeting room as the instructor."
+                    : "The instructor has accepted your request. Joining the meeting room...",
                 });
               }
-            } else if (newPayload.learner_id === user.id) {
-              // This is a connection request where the current user is the learner
-              if (payload.eventType === 'UPDATE') {
-                if (newPayload.status === 'accepted') {
-                  navigate(`/meeting/${newPayload.id}?type=video`);
-                  toast({
-                    title: "Request Accepted!",
-                    description: "You've joined the meeting room.",
-                  });
-                } else if (newPayload.status === 'rejected') {
-                  toast({
-                    title: "Request Rejected",
-                    description: "Your connection request has been rejected.",
-                  });
-                }
-              }
+            } else if (skillData?.instructor_id === user.id && payload.eventType === 'INSERT') {
+              // Only add new requests for instructors
+              const newRequest: ConnectionRequest = {
+                id: newPayload.id,
+                skill_id: newPayload.skill_id,
+                learner_id: newPayload.learner_id,
+                status: newPayload.status,
+                skill: skillData
+              };
+              setConnectionRequests(current => [...current, newRequest]);
+              
+              toast({
+                title: "New Connection Request",
+                description: `Someone wants to learn ${skillData.title}!`,
+              });
             }
           }
         )
