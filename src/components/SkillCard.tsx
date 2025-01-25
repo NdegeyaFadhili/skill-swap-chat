@@ -49,16 +49,21 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
         async (payload: any) => {
           console.log('Connection update received:', payload);
           // Check if this update is relevant to the current user
-          if (payload.new.status === 'accepted' && 
-              (payload.new.learner_id === user.id || skill.instructor_id === user.id)) {
+          const isLearner = payload.new.learner_id === user.id;
+          const isInstructor = skill.instructor_id === user.id;
+          
+          if (payload.new.status === 'accepted' && (isLearner || isInstructor)) {
             console.log('Navigating to meeting:', payload.new.id);
-            navigate(`/meeting/${payload.new.id}?type=video`);
-            toast({
-              title: "Connection Accepted!",
-              description: skill.instructor_id === user.id 
-                ? "Joining the meeting room as instructor..."
-                : "Instructor accepted your request. Joining the meeting room...",
-            });
+            // Add a small delay to ensure the state updates are processed
+            setTimeout(() => {
+              navigate(`/meeting/${payload.new.id}?type=video`);
+              toast({
+                title: "Connection Accepted!",
+                description: isInstructor 
+                  ? "Joining the meeting room as instructor..."
+                  : "Instructor accepted your request. Joining the meeting room...",
+              });
+            }, 100);
           }
         }
       )
