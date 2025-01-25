@@ -260,3 +260,4 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
       </CardContent>
     </Card>
   );
+};
