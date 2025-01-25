@@ -106,7 +106,6 @@ const Index = () => {
               .eq('id', newPayload.skill_id)
               .single();
 
-            // Handle connection updates for both instructor and learner
             if (payload.eventType === 'UPDATE' && newPayload.status === 'accepted') {
               console.log('Accepted connection:', {
                 skillData,

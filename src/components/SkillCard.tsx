@@ -47,11 +47,17 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
           filter: `skill_id=eq.${skill.id}`,
         },
         async (payload: any) => {
-          if (payload.new.status === 'accepted' && payload.new.learner_id === user.id) {
+          console.log('Connection update received:', payload);
+          // Check if this update is relevant to the current user
+          if (payload.new.status === 'accepted' && 
+              (payload.new.learner_id === user.id || skill.instructor_id === user.id)) {
+            console.log('Navigating to meeting:', payload.new.id);
             navigate(`/meeting/${payload.new.id}?type=video`);
             toast({
               title: "Connection Accepted!",
-              description: "Joining the meeting room...",
+              description: skill.instructor_id === user.id 
+                ? "Joining the meeting room as instructor..."
+                : "Instructor accepted your request. Joining the meeting room...",
             });
           }
         }
@@ -61,7 +67,7 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, skill.id, navigate, toast]);
+  }, [user, skill.id, skill.instructor_id, navigate, toast]);
 
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
@@ -121,15 +127,14 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
         .from('skill_connections')
         .select('id, status')
         .eq('skill_id', skill.id)
-        .eq('learner_id', user.id)
         .eq('status', 'accepted')
-        .single();
+        .or(`learner_id.eq.${user.id},skill.instructor_id.eq.${user.id}`)
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
+      if (error) throw error;
 
       if (data) {
+        console.log('Navigating to existing meeting:', data.id);
         navigate(`/meeting/${data.id}?type=${type}`);
       } else {
         toast({
@@ -138,6 +143,7 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
         });
       }
     } catch (error: any) {
+      console.log('Error checking connection:', error);
       toast({
         title: "Error",
         description: error.message,
@@ -254,4 +260,3 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
       </CardContent>
     </Card>
   );
-};
