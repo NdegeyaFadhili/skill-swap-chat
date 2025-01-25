@@ -82,7 +82,7 @@ const Index = () => {
         )
         .subscribe();
 
-      // Subscribe to connection requests changes - Updated to handle both instructor and learner
+      // Subscribe to connection requests changes
       const connectionsChannel = supabase
         .channel('connection-updates')
         .on(
@@ -108,17 +108,32 @@ const Index = () => {
 
             // Handle connection updates for both instructor and learner
             if (payload.eventType === 'UPDATE' && newPayload.status === 'accepted') {
-              if (skillData?.instructor_id === user.id || newPayload.learner_id === user.id) {
-                // Remove the request from the list if it exists
-                setConnectionRequests(current =>
-                  current.filter(req => req.id !== newPayload.id)
-                );
+              console.log('Accepted connection:', {
+                skillData,
+                userId: user.id,
+                learner: newPayload.learner_id,
+                instructor: skillData?.instructor_id
+              });
+
+              // Check if current user is either the instructor or learner
+              const isInstructor = skillData?.instructor_id === user.id;
+              const isLearner = newPayload.learner_id === user.id;
+
+              if (isInstructor || isLearner) {
+                // Remove the request from the list if it exists (for instructor)
+                if (isInstructor) {
+                  setConnectionRequests(current =>
+                    current.filter(req => req.id !== newPayload.id)
+                  );
+                }
                 
                 // Navigate to meeting for both users
+                console.log('Navigating to meeting:', newPayload.id);
                 navigate(`/meeting/${newPayload.id}?type=video`);
+                
                 toast({
                   title: "Meeting Started",
-                  description: skillData?.instructor_id === user.id 
+                  description: isInstructor 
                     ? "You've joined the meeting room as the instructor."
                     : "The instructor has accepted your request. Joining the meeting room...",
                 });
