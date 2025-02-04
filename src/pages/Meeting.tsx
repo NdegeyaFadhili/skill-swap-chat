@@ -1,14 +1,14 @@
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MessageSquare, Video, PhoneCall, X } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { MeetingHeader } from "@/components/meeting/MeetingHeader";
+import { ChatRoom } from "@/components/meeting/ChatRoom";
+import { MediaRoom } from "@/components/meeting/MediaRoom";
+import { startMediaStream, checkDevicePermissions } from "@/utils/mediaUtils";
 
 interface Message {
   sender_id: string;
@@ -39,13 +39,10 @@ export default function Meeting() {
   const meetingType = searchParams.get('type') || 'chat';
   const [connection, setConnection] = useState<Connection | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [peerStream, setPeerStream] = useState<MediaStream | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -81,7 +78,6 @@ export default function Meeting() {
           return;
         }
 
-        // Check if the current user is either the learner or the instructor
         if (data.learner_id !== user.id && data.skill?.instructor_id !== user.id) {
           toast({
             title: "Unauthorized",
@@ -95,12 +91,11 @@ export default function Meeting() {
         setConnection(data);
         console.log("Connection loaded:", data);
 
-        // Check device permissions for media types
         if (meetingType !== 'chat') {
-          checkDevicePermissions(meetingType as 'video' | 'audio');
+          const { error } = await checkDevicePermissions(meetingType as 'video' | 'audio');
+          if (error) setDeviceError(error);
         }
 
-        // Set up presence channel for this meeting
         setupPresenceChannel(data.id, user.id, data.learner_id, data.skill?.instructor_id || '');
 
       } catch (error: any) {
@@ -116,7 +111,6 @@ export default function Meeting() {
       }
     };
 
-    // Subscribe to real-time messages
     const messageChannel = supabase.channel(`chat:${connectionId}`)
       .on('broadcast', { event: 'message' }, ({ payload }) => {
         if (payload) {
@@ -125,7 +119,6 @@ export default function Meeting() {
       })
       .subscribe();
 
-    // Subscribe to connection updates
     const connectionChannel = supabase.channel(`meeting:${connectionId}`)
       .on(
         'postgres_changes',
@@ -177,7 +170,6 @@ export default function Meeting() {
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences);
-        // If the other participant joins, start their stream
         if ((key === learnerId || key === instructorId) && key !== userId) {
           toast({
             title: "Participant Joined",
@@ -200,105 +192,53 @@ export default function Meeting() {
     return presenceChannel;
   };
 
-  const checkDevicePermissions = async (type: 'video' | 'audio') => {
-    try {
-      // First check if the devices are available
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const hasVideoDevice = devices.some(device => device.kind === 'videoinput');
-      const hasAudioDevice = devices.some(device => device.kind === 'audioinput');
-
-      if (type === 'video' && !hasVideoDevice) {
-        setDeviceError('No camera found. Please connect a camera and try again.');
-        return;
-      }
-
-      if (!hasAudioDevice) {
-        setDeviceError('No microphone found. Please connect a microphone and try again.');
-        return;
-      }
-
-      // If devices are available, try to start the media stream
-      await startMediaStream(type);
-      setDeviceError(null);
-    } catch (error: any) {
-      console.error('Error checking device permissions:', error);
-      setDeviceError(error.message);
-      toast({
-        title: "Device Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const startMediaStream = async (type: 'video' | 'audio') => {
+  const handleMediaToggle = async () => {
     try {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
+        setStream(null);
+        return;
       }
 
-      // Request permissions and get stream
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: type === 'video',
-        audio: true,
-      });
-      
-      setStream(mediaStream);
-
-      // Set local video stream
-      if (localVideoRef.current && type === 'video') {
-        localVideoRef.current.srcObject = mediaStream;
+      const { stream: newStream, error } = await startMediaStream(meetingType as 'video' | 'audio');
+      if (error) {
+        setDeviceError(error);
+        toast({
+          title: "Media Error",
+          description: error,
+          variant: "destructive",
+        });
+        return;
       }
 
-      toast({
-        title: `${type === 'video' ? 'Video' : 'Audio'} Started`,
-        description: "Your media stream is now active",
-      });
+      setStream(newStream);
+      setDeviceError(null);
 
-      // Set up broadcast channel for sharing stream
       const streamChannel = supabase.channel(`stream:${connectionId}`);
       await streamChannel.subscribe();
 
-      // Broadcast stream availability
       await streamChannel.send({
         type: 'broadcast',
         event: 'stream-ready',
         payload: { userId: user?.id },
       });
 
-    } catch (error: any) {
-      console.error('Error starting media stream:', error);
-      let errorMessage = error.message;
-      
-      if (error.name === 'NotFoundError') {
-        errorMessage = `${type === 'video' ? 'Camera' : 'Microphone'} not found. Please check your device connections.`;
-      } else if (error.name === 'NotAllowedError') {
-        errorMessage = `Please allow access to your ${type === 'video' ? 'camera' : 'microphone'} to join the meeting.`;
-      }
-      
-      setDeviceError(errorMessage);
       toast({
-        title: "Media Error",
-        description: errorMessage,
-        variant: "destructive",
+        title: `${meetingType === 'video' ? 'Video' : 'Audio'} Started`,
+        description: "Your media stream is now active",
       });
-      throw error;
+    } catch (error: any) {
+      console.error('Error toggling media:', error);
+      setDeviceError(error.message);
     }
   };
 
-  const stopMediaStream = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !connection) return;
+  const sendMessage = async (content: string) => {
+    if (!connection) return;
 
     const message = {
       sender_id: user?.id,
-      content: newMessage,
+      content,
       timestamp: new Date(),
     };
 
@@ -309,7 +249,6 @@ export default function Meeting() {
     });
 
     setMessages(prev => [...prev, message]);
-    setNewMessage("");
   };
 
   const endMeeting = async () => {
@@ -321,7 +260,9 @@ export default function Meeting() {
         .update({ status: 'completed' })
         .eq('id', connectionId);
 
-      stopMediaStream();
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
       navigate('/');
     } catch (error) {
       console.error('Error ending meeting:', error);
@@ -329,7 +270,10 @@ export default function Meeting() {
   };
 
   const switchMeetingType = (type: string) => {
-    stopMediaStream();
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
     navigate(`/meeting/${connectionId}?type=${type}`);
   };
 
@@ -352,125 +296,28 @@ export default function Meeting() {
   return (
     <div className="container mx-auto px-4 py-8">
       <Card className="max-w-3xl mx-auto">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl mb-2">
-                {connection.skill?.title}
-              </CardTitle>
-              <div className="flex gap-4">
-                <Button
-                  variant={meetingType === 'chat' ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => switchMeetingType('chat')}
-                >
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Chat
-                </Button>
-                <Button
-                  variant={meetingType === 'video' ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => switchMeetingType('video')}
-                >
-                  <Video className="h-4 w-4 mr-2" />
-                  Video
-                </Button>
-                <Button
-                  variant={meetingType === 'audio' ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => switchMeetingType('audio')}
-                >
-                  <PhoneCall className="h-4 w-4 mr-2" />
-                  Audio
-                </Button>
-              </div>
-            </div>
-            <Button variant="destructive" size="icon" onClick={endMeeting}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardHeader>
+        <MeetingHeader
+          skillTitle={connection.skill?.title || ''}
+          meetingType={meetingType}
+          onSwitchType={switchMeetingType}
+          onEndMeeting={endMeeting}
+        />
         <CardContent>
-          {deviceError && (
-            <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-lg">
-              {deviceError}
-            </div>
-          )}
-          
-          {meetingType === 'chat' && (
-            <div className="space-y-4">
-              <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`mb-4 ${
-                      message.sender_id === user?.id ? 'text-right' : 'text-left'
-                    }`}
-                  >
-                    <div
-                      className={`inline-block rounded-lg px-4 py-2 ${
-                        message.sender_id === user?.id
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
-                      }`}
-                    >
-                      {message.content}
-                    </div>
-                  </div>
-                ))}
-              </ScrollArea>
-              <div className="flex gap-2">
-                <Input
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                />
-                <Button onClick={sendMessage}>Send</Button>
-              </div>
-            </div>
-          )}
-
-          {(meetingType === 'video' || meetingType === 'audio') && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                  {meetingType === 'video' && (
-                    <video
-                      ref={localVideoRef}
-                      className="w-full h-full object-cover"
-                      muted
-                      playsInline
-                      autoPlay
-                    />
-                  )}
-                  <div className="absolute bottom-2 left-2 text-white text-sm">
-                    You
-                  </div>
-                </div>
-                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                  {peerStream && meetingType === 'video' && (
-                    <video
-                      ref={remoteVideoRef}
-                      className="w-full h-full object-cover"
-                      playsInline
-                      autoPlay
-                    />
-                  )}
-                  <div className="absolute bottom-2 left-2 text-white text-sm">
-                    {connection.learner_id === user?.id ? 'Instructor' : 'Learner'}
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-center gap-4">
-                <Button
-                  variant={stream ? "destructive" : "default"}
-                  onClick={() => stream ? stopMediaStream() : checkDevicePermissions(meetingType as 'video' | 'audio')}
-                >
-                  {stream ? 'Stop' : 'Start'} {meetingType === 'video' ? 'Video' : 'Audio'}
-                </Button>
-              </div>
-            </div>
+          {meetingType === 'chat' ? (
+            <ChatRoom
+              messages={messages}
+              currentUserId={user?.id || ''}
+              onSendMessage={sendMessage}
+            />
+          ) : (
+            <MediaRoom
+              type={meetingType as 'video' | 'audio'}
+              stream={stream}
+              peerStream={peerStream}
+              deviceError={deviceError}
+              isLearner={connection.learner_id === user?.id}
+              onToggleStream={handleMediaToggle}
+            />
           )}
         </CardContent>
       </Card>
