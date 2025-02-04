@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,8 +41,11 @@ export default function Meeting() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [peerStream, setPeerStream] = useState<MediaStream | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -95,6 +99,10 @@ export default function Meeting() {
         if (meetingType !== 'chat') {
           checkDevicePermissions(meetingType as 'video' | 'audio');
         }
+
+        // Set up presence channel for this meeting
+        setupPresenceChannel(data.id, user.id, data.learner_id, data.skill?.instructor_id || '');
+
       } catch (error: any) {
         console.error('Error fetching connection:', error);
         toast({
@@ -153,6 +161,45 @@ export default function Meeting() {
     };
   }, [connectionId, user, navigate, toast, meetingType]);
 
+  const setupPresenceChannel = (meetingId: string, userId: string, learnerId: string, instructorId: string) => {
+    const presenceChannel = supabase.channel(`presence:${meetingId}`, {
+      config: {
+        presence: {
+          key: userId,
+        },
+      },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        console.log('Presence state:', state);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        console.log('User joined:', key, newPresences);
+        // If the other participant joins, start their stream
+        if ((key === learnerId || key === instructorId) && key !== userId) {
+          toast({
+            title: "Participant Joined",
+            description: "The other participant has joined the meeting.",
+          });
+        }
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        console.log('User left:', key, leftPresences);
+        if ((key === learnerId || key === instructorId) && key !== userId) {
+          toast({
+            title: "Participant Left",
+            description: "The other participant has left the meeting.",
+          });
+          setPeerStream(null);
+        }
+      })
+      .subscribe();
+
+    return presenceChannel;
+  };
+
   const checkDevicePermissions = async (type: 'video' | 'audio') => {
     try {
       // First check if the devices are available
@@ -186,23 +233,39 @@ export default function Meeting() {
 
   const startMediaStream = async (type: 'video' | 'audio') => {
     try {
-      // Request permissions first
-      await navigator.mediaDevices.getUserMedia({
-        video: type === 'video',
-        audio: true,
-      });
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
 
-      // If permissions granted, get the stream
+      // Request permissions and get stream
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: type === 'video',
         audio: true,
       });
       
       setStream(mediaStream);
+
+      // Set local video stream
+      if (localVideoRef.current && type === 'video') {
+        localVideoRef.current.srcObject = mediaStream;
+      }
+
       toast({
         title: `${type === 'video' ? 'Video' : 'Audio'} Started`,
         description: "Your media stream is now active",
       });
+
+      // Set up broadcast channel for sharing stream
+      const streamChannel = supabase.channel(`stream:${connectionId}`);
+      await streamChannel.subscribe();
+
+      // Broadcast stream availability
+      await streamChannel.send({
+        type: 'broadcast',
+        event: 'stream-ready',
+        payload: { userId: user?.id },
+      });
+
     } catch (error: any) {
       console.error('Error starting media stream:', error);
       let errorMessage = error.message;
@@ -370,21 +433,35 @@ export default function Meeting() {
 
           {(meetingType === 'video' || meetingType === 'audio') && (
             <div className="space-y-4">
-              {stream && (
+              <div className="grid grid-cols-2 gap-4">
                 <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                  <video
-                    ref={(videoEl) => {
-                      if (videoEl && stream) {
-                        videoEl.srcObject = stream;
-                        videoEl.play();
-                      }
-                    }}
-                    className="w-full h-full object-cover"
-                    muted
-                    playsInline
-                  />
+                  {meetingType === 'video' && (
+                    <video
+                      ref={localVideoRef}
+                      className="w-full h-full object-cover"
+                      muted
+                      playsInline
+                      autoPlay
+                    />
+                  )}
+                  <div className="absolute bottom-2 left-2 text-white text-sm">
+                    You
+                  </div>
                 </div>
-              )}
+                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                  {peerStream && meetingType === 'video' && (
+                    <video
+                      ref={remoteVideoRef}
+                      className="w-full h-full object-cover"
+                      playsInline
+                      autoPlay
+                    />
+                  )}
+                  <div className="absolute bottom-2 left-2 text-white text-sm">
+                    {connection.learner_id === user?.id ? 'Instructor' : 'Learner'}
+                  </div>
+                </div>
+              </div>
               <div className="flex justify-center gap-4">
                 <Button
                   variant={stream ? "destructive" : "default"}
