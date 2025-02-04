@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -97,6 +96,7 @@ export default function Meeting() {
         }
 
         setupPresenceChannel(data.id, user.id, data.learner_id, data.skill?.instructor_id || '');
+        setupCallChannel(data.id, user.id, data.learner_id, data.skill?.instructor_id || '');
 
       } catch (error: any) {
         console.error('Error fetching connection:', error);
@@ -154,42 +154,25 @@ export default function Meeting() {
     };
   }, [connectionId, user, navigate, toast, meetingType]);
 
-  const setupPresenceChannel = (meetingId: string, userId: string, learnerId: string, instructorId: string) => {
-    const presenceChannel = supabase.channel(`presence:${meetingId}`, {
-      config: {
-        presence: {
-          key: userId,
-        },
-      },
-    });
+  const setupCallChannel = (
+    meetingId: string,
+    userId: string,
+    learnerId: string,
+    instructorId: string
+  ) => {
+    const callChannel = supabase.channel(`call:${meetingId}`);
 
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState();
-        console.log('Presence state:', state);
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('User joined:', key, newPresences);
-        if ((key === learnerId || key === instructorId) && key !== userId) {
-          toast({
-            title: "Participant Joined",
-            description: "The other participant has joined the meeting.",
-          });
-        }
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('User left:', key, leftPresences);
-        if ((key === learnerId || key === instructorId) && key !== userId) {
-          toast({
-            title: "Participant Left",
-            description: "The other participant has left the meeting.",
-          });
-          setPeerStream(null);
+    callChannel
+      .on('broadcast', { event: 'stream-ready' }, async ({ payload }) => {
+        console.log('Stream ready from:', payload.userId);
+        
+        if (!stream && payload.userId !== user?.id) {
+          await handleMediaToggle();
         }
       })
       .subscribe();
 
-    return presenceChannel;
+    return callChannel;
   };
 
   const handleMediaToggle = async () => {
@@ -216,12 +199,16 @@ export default function Meeting() {
 
       const streamChannel = supabase.channel(`stream:${connectionId}`);
       await streamChannel.subscribe();
-
+      
       await streamChannel.send({
         type: 'broadcast',
         event: 'stream-ready',
         payload: { userId: user?.id },
       });
+
+      if (connection && !peerStream) {
+        setupPeerConnection(newStream, connection.learner_id, connection.skill?.instructor_id || '');
+      }
 
       toast({
         title: `${meetingType === 'video' ? 'Video' : 'Audio'} Started`,
@@ -230,6 +217,83 @@ export default function Meeting() {
     } catch (error: any) {
       console.error('Error toggling media:', error);
       setDeviceError(error.message);
+    }
+  };
+
+  const setupPeerConnection = async (
+    localStream: MediaStream,
+    learnerId: string,
+    instructorId: string
+  ) => {
+    try {
+      const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      const peerConnection = new RTCPeerConnection(configuration);
+
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      peerConnection.ontrack = (event) => {
+        console.log('Received remote track');
+        setPeerStream(event.streams[0]);
+      };
+
+      const signalingChannel = supabase.channel(`signaling:${connectionId}`);
+      
+      peerConnection.onicecandidate = async (event) => {
+        if (event.candidate) {
+          await signalingChannel.send({
+            type: 'broadcast',
+            event: 'ice-candidate',
+            payload: { candidate: event.candidate, userId: user?.id },
+          });
+        }
+      };
+
+      if (user?.id === instructorId) {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        await signalingChannel.send({
+          type: 'broadcast',
+          event: 'offer',
+          payload: { offer, userId: user.id },
+        });
+      }
+
+      signalingChannel
+        .on('broadcast', { event: 'offer' }, async ({ payload }) => {
+          if (payload.userId !== user?.id) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            await signalingChannel.send({
+              type: 'broadcast',
+              event: 'answer',
+              payload: { answer, userId: user?.id },
+            });
+          }
+        })
+        .on('broadcast', { event: 'answer' }, async ({ payload }) => {
+          if (payload.userId !== user?.id) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.answer));
+          }
+        })
+        .on('broadcast', { event: 'ice-candidate' }, async ({ payload }) => {
+          if (payload.userId !== user?.id) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+          }
+        })
+        .subscribe();
+
+    } catch (error) {
+      console.error('Error setting up peer connection:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to establish peer connection",
+        variant: "destructive",
+      });
     }
   };
 
