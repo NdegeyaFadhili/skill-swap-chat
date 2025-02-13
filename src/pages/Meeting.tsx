@@ -10,7 +10,7 @@ import { ChatRoom } from "@/components/meeting/ChatRoom";
 import { MediaRoom } from "@/components/meeting/MediaRoom";
 import { startMediaStream, checkDevicePermissions } from "@/utils/mediaUtils";
 import { setupPeerConnection } from "@/utils/webRTCUtils";
-import { setupPresenceChannel } from "@/utils/presenceUtils";
+import { setupPresenceChannel, PresenceState } from "@/utils/presenceUtils";
 import { useConnection } from "@/hooks/useConnection";
 
 interface Message {
@@ -27,6 +27,7 @@ export default function Meeting() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [peerStream, setPeerStream] = useState<MediaStream | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [presenceState, setPresenceState] = useState<PresenceState>({});
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -34,7 +35,7 @@ export default function Meeting() {
   const { connection, loading } = useConnection(connectionId, user?.id);
 
   useEffect(() => {
-    if (!connection) return;
+    if (!connection || !user?.id) return;
 
     if (meetingType !== 'chat') {
       checkDevicePermissions(meetingType as 'video' | 'audio')
@@ -43,11 +44,25 @@ export default function Meeting() {
         });
     }
 
-    setupPresenceChannel(
+    const presenceChannel = setupPresenceChannel(
       connection.id,
-      user?.id || '',
+      user.id,
       connection.learner_id,
-      connection.skill?.instructor_id || ''
+      connection.skill?.instructor_id || '',
+      (state) => {
+        console.log('Presence state updated:', state);
+        setPresenceState(state);
+        
+        // Show toast when other participant joins
+        const participants = Object.values(state).flat();
+        const otherParticipant = participants.find(p => p.user_id !== user.id);
+        if (otherParticipant) {
+          toast({
+            title: `${otherParticipant.is_instructor ? 'Instructor' : 'Learner'} joined`,
+            description: "You can now start your session",
+          });
+        }
+      }
     );
 
     const messageChannel = supabase.channel(`chat:${connectionId}`)
@@ -85,6 +100,7 @@ export default function Meeting() {
     return () => {
       messageChannel.unsubscribe();
       connectionChannel.unsubscribe();
+      presenceChannel.unsubscribe();
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
@@ -187,6 +203,13 @@ export default function Meeting() {
     navigate(`/meeting/${connectionId}?type=${type}`);
   };
 
+  // Check if both participants are present
+  const participants = Object.values(presenceState).flat();
+  const isOtherParticipantPresent = participants.some(p => 
+    p.user_id !== user?.id && 
+    (p.user_id === connection?.learner_id || p.user_id === connection?.skill?.instructor_id)
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -213,6 +236,11 @@ export default function Meeting() {
           onEndMeeting={endMeeting}
         />
         <CardContent>
+          {!isOtherParticipantPresent && (
+            <div className="mb-4 p-4 bg-yellow-50 text-yellow-700 rounded-lg">
+              Waiting for the other participant to join...
+            </div>
+          )}
           {meetingType === 'chat' ? (
             <ChatRoom
               messages={messages}
