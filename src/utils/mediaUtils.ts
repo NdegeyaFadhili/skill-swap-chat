@@ -6,18 +6,28 @@ export const startMediaStream = async (type: 'video' | 'audio') => {
     const hasVideoDevice = devices.some(device => device.kind === 'videoinput');
     const hasAudioDevice = devices.some(device => device.kind === 'audioinput');
 
-    if (type === 'video' && !hasVideoDevice) {
-      return { 
-        stream: null, 
-        error: 'No camera found. Please connect a camera and try again.' 
-      };
-    }
-
-    if (!hasAudioDevice) {
-      return { 
-        stream: null, 
-        error: 'No microphone found. Please connect a microphone and try again.' 
-      };
+    // For video calls, we need both video and audio
+    if (type === 'video') {
+      if (!hasVideoDevice) {
+        return { 
+          stream: null, 
+          error: 'No camera found. Please connect a camera and try again.' 
+        };
+      }
+      if (!hasAudioDevice) {
+        return { 
+          stream: null, 
+          error: 'No microphone found. Please connect a microphone and try again.' 
+        };
+      }
+    } else {
+      // For audio-only calls, we only need a microphone
+      if (!hasAudioDevice) {
+        return { 
+          stream: null, 
+          error: 'No microphone found. Please connect a microphone and try again.' 
+        };
+      }
     }
 
     // Request permissions and get stream
@@ -26,7 +36,11 @@ export const startMediaStream = async (type: 'video' | 'audio') => {
         width: { ideal: 1280 },
         height: { ideal: 720 }
       } : false,
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
     });
     
     return { stream: mediaStream, error: null };
@@ -48,7 +62,7 @@ export const startMediaStream = async (type: 'video' | 'audio') => {
 
 export const checkDevicePermissions = async (type: 'video' | 'audio') => {
   try {
-    // Request permissions first
+    // Request permissions first, but only for the required devices
     await navigator.mediaDevices.getUserMedia({
       video: type === 'video',
       audio: true
@@ -59,12 +73,19 @@ export const checkDevicePermissions = async (type: 'video' | 'audio') => {
     const hasVideoDevice = devices.some(device => device.kind === 'videoinput');
     const hasAudioDevice = devices.some(device => device.kind === 'audioinput');
 
-    if (type === 'video' && !hasVideoDevice) {
-      return { error: 'No camera found. Please connect a camera and try again.' };
-    }
-
-    if (!hasAudioDevice) {
-      return { error: 'No microphone found. Please connect a microphone and try again.' };
+    // For video calls, we need both video and audio
+    if (type === 'video') {
+      if (!hasVideoDevice) {
+        return { error: 'No camera found. Please connect a camera and try again.' };
+      }
+      if (!hasAudioDevice) {
+        return { error: 'No microphone found. Please connect a microphone and try again.' };
+      }
+    } else {
+      // For audio-only calls, we only need a microphone
+      if (!hasAudioDevice) {
+        return { error: 'No microphone found. Please connect a microphone and try again.' };
+      }
     }
 
     return { error: null };
