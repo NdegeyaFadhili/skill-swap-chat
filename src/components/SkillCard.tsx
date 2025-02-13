@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,7 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'skill_connections',
           filter: `skill_id=eq.${skill.id}`,
@@ -53,17 +54,13 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
           const isInstructor = skill.instructor_id === user.id;
           
           if (payload.new.status === 'accepted' && (isLearner || isInstructor)) {
-            console.log('Navigating to meeting:', payload.new.id);
-            // Add a small delay to ensure the state updates are processed
-            setTimeout(() => {
-              navigate(`/meeting/${payload.new.id}?type=video`);
-              toast({
-                title: "Connection Accepted!",
-                description: isInstructor 
-                  ? "Joining the meeting room as instructor..."
-                  : "Instructor accepted your request. Joining the meeting room...",
-              });
-            }, 100);
+            console.log('Connection accepted:', payload.new.id);
+            toast({
+              title: "Connection Accepted!",
+              description: isInstructor 
+                ? "You've accepted the connection request."
+                : "Your connection request has been accepted by the instructor.",
+            });
           }
         }
       )
@@ -72,7 +69,51 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, skill.id, skill.instructor_id, navigate, toast]);
+  }, [user, skill.id, skill.instructor_id, toast]);
+
+  const handleMeetingTypeSelect = async (type: 'chat' | 'video' | 'audio') => {
+    if (!user) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to join a meeting.",
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('skill_connections')
+        .select('id, status')
+        .eq('skill_id', skill.id)
+        .eq('status', 'accepted')
+        .or(`learner_id.eq.${user.id},skill.instructor_id.eq.${user.id}`)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        console.log('Joining meeting:', data.id);
+        navigate(`/meeting/${data.id}?type=${type}`);
+        toast({
+          title: "Joining Meeting",
+          description: `Joining ${type} meeting...`,
+        });
+      } else {
+        toast({
+          title: "Connection Required",
+          description: "Please wait for the instructor to accept your connection request.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('Error checking connection:', error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
@@ -110,45 +151,6 @@ export const SkillCard = ({ skill, onConnect, onDelete }: SkillCardProps) => {
 
       if (onDelete) onDelete();
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleMeetingTypeSelect = async (type: 'chat' | 'video' | 'audio') => {
-    if (!user) {
-      toast({
-        title: "Please sign in",
-        description: "You need to be signed in to start a meeting.",
-      });
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('skill_connections')
-        .select('id, status')
-        .eq('skill_id', skill.id)
-        .eq('status', 'accepted')
-        .or(`learner_id.eq.${user.id},skill.instructor_id.eq.${user.id}`)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        console.log('Navigating to existing meeting:', data.id);
-        navigate(`/meeting/${data.id}?type=${type}`);
-      } else {
-        toast({
-          title: "Connection Required",
-          description: "Please connect with the instructor first.",
-        });
-      }
-    } catch (error: any) {
-      console.log('Error checking connection:', error);
       toast({
         title: "Error",
         description: error.message,
