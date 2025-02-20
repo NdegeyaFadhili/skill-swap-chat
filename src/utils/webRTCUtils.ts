@@ -13,33 +13,62 @@ export const setupPeerConnection = async (
   try {
     console.log('Setting up peer connection for:', { userId, learnerId, instructorId });
     
+    // Enhanced ICE server configuration
     const configuration = { 
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 10
     };
     
     const peerConnection = new RTCPeerConnection(configuration);
 
-    // Add all tracks from local stream to peer connection
+    // Add tracks one by one and log each addition
     localStream.getTracks().forEach(track => {
-      console.log('Adding track to peer connection:', track.kind);
-      peerConnection.addTrack(track, localStream);
+      const sender = peerConnection.addTrack(track, localStream);
+      console.log(`Added track to peer connection:`, {
+        kind: track.kind,
+        enabled: track.enabled,
+        muted: track.muted
+      });
     });
 
-    // Handle incoming streams
+    // Handle incoming remote streams more robustly
     peerConnection.ontrack = (event) => {
-      console.log('Received remote track:', event.streams[0]);
-      setPeerStream(event.streams[0]);
+      console.log('Received remote track:', {
+        kind: event.track.kind,
+        enabled: event.track.enabled,
+        streams: event.streams.length
+      });
+      
+      if (event.streams[0]) {
+        setPeerStream(event.streams[0]);
+        
+        // Monitor remote stream status
+        event.track.onmute = () => console.log('Remote track muted');
+        event.track.onunmute = () => console.log('Remote track unmuted');
+        event.track.onended = () => console.log('Remote track ended');
+      }
     };
 
-    const signalingChannel = supabase.channel(`signaling:${connectionId}`);
-    
-    // Handle ICE candidates
+    const signalingChannel = supabase.channel(`signaling:${connectionId}`, {
+      config: {
+        broadcast: { ack: true }
+      }
+    });
+
+    // Enhanced ICE candidate handling
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        console.log('Sending ICE candidate');
+        console.log('Sending ICE candidate:', {
+          type: event.candidate.type,
+          protocol: event.candidate.protocol
+        });
+        
         await signalingChannel.send({
           type: 'broadcast',
           event: 'ice-candidate',
@@ -48,26 +77,56 @@ export const setupPeerConnection = async (
       }
     };
 
-    // Connection state changes
+    // Monitor connection state changes in detail
     peerConnection.onconnectionstatechange = () => {
-      console.log('Connection state:', peerConnection.connectionState);
-      if (peerConnection.connectionState === 'connected') {
-        toast({
-          title: "Connected!",
-          description: "Video connection established successfully.",
-        });
+      console.log('Connection state changed to:', peerConnection.connectionState);
+      switch (peerConnection.connectionState) {
+        case 'connected':
+          toast({
+            title: "Connected!",
+            description: "Video connection established successfully.",
+          });
+          break;
+        case 'disconnected':
+          toast({
+            title: "Disconnected",
+            description: "Connection lost. Trying to reconnect...",
+            variant: "destructive",
+          });
+          break;
+        case 'failed':
+          toast({
+            title: "Connection Failed",
+            description: "Unable to establish connection. Please try again.",
+            variant: "destructive",
+          });
+          break;
       }
     };
 
-    // If user is instructor, create and send offer
+    // Monitor ICE connection state
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+    };
+
+    // Monitor signaling state
+    peerConnection.onsignalingstatechange = () => {
+      console.log('Signaling state:', peerConnection.signalingState);
+    };
+
+    // If user is instructor, initiate the connection
     if (userId === instructorId) {
       console.log('Creating offer as instructor');
       const offer = await peerConnection.createOffer({
         offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+        offerToReceiveVideo: true,
+        voiceActivityDetection: true
       });
+      
+      console.log('Setting local description');
       await peerConnection.setLocalDescription(offer);
       
+      console.log('Sending offer');
       await signalingChannel.send({
         type: 'broadcast',
         event: 'offer',
@@ -75,15 +134,21 @@ export const setupPeerConnection = async (
       });
     }
 
-    // Handle incoming messages
+    // Enhanced signaling channel handling
     signalingChannel
       .on('broadcast', { event: 'offer' }, async ({ payload }) => {
         if (payload.userId !== userId) {
           console.log('Received offer, creating answer');
           await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.offer));
-          const answer = await peerConnection.createAnswer();
+          
+          const answer = await peerConnection.createAnswer({
+            voiceActivityDetection: true
+          });
+          
+          console.log('Setting local description for answer');
           await peerConnection.setLocalDescription(answer);
           
+          console.log('Sending answer');
           await signalingChannel.send({
             type: 'broadcast',
             event: 'answer',
@@ -108,10 +173,14 @@ export const setupPeerConnection = async (
           }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Signaling channel status:', status);
+      });
 
-    // Cleanup function
+    // Enhanced cleanup function
     return () => {
+      console.log('Cleaning up peer connection');
+      localStream.getTracks().forEach(track => track.stop());
       peerConnection.close();
       signalingChannel.unsubscribe();
     };
