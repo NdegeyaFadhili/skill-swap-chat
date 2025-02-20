@@ -119,8 +119,7 @@ export const setupPeerConnection = async (
       console.log('Creating offer as instructor');
       const offer = await peerConnection.createOffer({
         offerToReceiveAudio: true,
-        offerToReceiveVideo: true,
-        voiceActivityDetection: true
+        offerToReceiveVideo: true
       });
       
       console.log('Setting local description');
@@ -141,9 +140,7 @@ export const setupPeerConnection = async (
           console.log('Received offer, creating answer');
           await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.offer));
           
-          const answer = await peerConnection.createAnswer({
-            voiceActivityDetection: true
-          });
+          const answer = await peerConnection.createAnswer();
           
           console.log('Setting local description for answer');
           await peerConnection.setLocalDescription(answer);
