@@ -1,3 +1,4 @@
+
 import { BrowserRouter as Router } from "react-router-dom";
 import Index from "./pages/Index";
 import Meeting from "./pages/Meeting";
@@ -12,6 +13,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/meeting/:connectionId" element={<Meeting />} />
+          <Route path="/auth/callback" element={<Index />} />
         </Routes>
         <Toaster />
       </AuthProvider>

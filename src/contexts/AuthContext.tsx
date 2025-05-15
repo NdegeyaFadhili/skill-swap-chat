@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -72,23 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [navigate]);
 
-  const handleAuthError = (error: AuthError) => {
-    let message = error.message;
-    
-    if (error.message === 'Invalid login credentials') {
-      message = 'Invalid email or password';
-    } else if (error.message.includes('refresh_token_not_found')) {
-      message = 'Your session has expired. Please sign in again.';
-      signOut(); // Force sign out if refresh token is invalid
-    }
-    
-    toast({
-      title: "Authentication Error",
-      description: message,
-      variant: "destructive",
-    });
-  };
-
   const signUp = async (email: string, password: string) => {
     try {
       const { error } = await supabase.auth.signUp({
@@ -100,9 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) throw error;
     } catch (error) {
-      if (error instanceof AuthError) {
-        handleAuthError(error);
-      }
+      console.error('Sign up error:', error);
       throw error;
     }
   };
@@ -115,9 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) throw error;
     } catch (error) {
-      if (error instanceof AuthError) {
-        handleAuthError(error);
-      }
+      console.error('Sign in error:', error);
       throw error;
     }
   };
@@ -128,9 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       navigate('/');
     } catch (error) {
-      if (error instanceof AuthError) {
-        handleAuthError(error);
-      }
+      console.error('Sign out error:', error);
       throw error;
     }
   };
